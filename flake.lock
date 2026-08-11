@@ -42,15 +42,15 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1784744474,
-        "narHash": "sha256-9yx5PzXBkZ+160uquH4f7lCCPZGlzdc1Y2j+zOKRc54=",
-        "owner": "lenianiva",
+        "lastModified": 1786463392,
+        "narHash": "sha256-5ke9p2DFQcF0FxR/RyrYvZymoVcCR1zyVWlnhqfRyf0=",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "9edc9448c8fe9552ba2b66e6097abda6e14e5c6f",
+        "rev": "c41a770e44a990da275dad0f70da75f22197e597",
         "type": "github"
       },
       "original": {
-        "owner": "lenianiva",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
         "type": "github"
       }

@@ -23,14 +23,25 @@
 
       perSystem =
         { system, pkgs, ... }:
+        let
+          lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
+        in
         {
           devShells.default = pkgs.mkShell {
             # `gh` and `git` are invoked by the action's subcommands.
             packages = [
-              (lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain)
+              lean
               pkgs.gh
               pkgs.git
             ];
+            # `IO.Process.lakeOutput` resolves lake through the Elan proxy
+            # rather than `PATH`, so `lake update` finds nothing in a shell that
+            # only has lake on `PATH`. CI installs real Elan; here the toolchain
+            # provides the same `bin/lake` layout that `ELAN_HOME` expects.
+            #
+            # Note this pins every package to this toolchain, where Elan would
+            # honour each package's own `lean-toolchain`.
+            ELAN_HOME = "${lean}";
           };
         };
     };

@@ -158,3 +158,117 @@ jobs:
       - name: This update should fail
         if: steps.update.outputs.result != 'update-fail'
         run: exit 1
+
+  # `bump_mode: pinned-tags` moves a dependency's pinned Lean-version tag and
+  # `lean-toolchain` together, so the two must agree afterwards and neither may
+  # be left behind.
+  pinned_tags_e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Bump the pinned tag and the toolchain
+        id: update
+        uses: ./
+        with:
+          bump_mode: "pinned-tags"
+          on_update_succeeds: "silent"
+          on_update_fails: "silent"
+          lake_package_directory: "./Fixtures/PinnedTags"
+
+      - name: The toolchain and the pinned dependency must move together
+        run: |
+          toolchain=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
+          pin=$(grep -o '@ "[^"]*"' Fixtures/PinnedTags/lakefile.lean | cut -d'"' -f2)
+          echo "toolchain=$toolchain pin=$pin"
+          if [ "$toolchain" = "v4.31.0" ]; then
+            echo "Error: lean-toolchain was not bumped"
+            exit 1
+          fi
+          if [ "$toolchain" != "$pin" ]; then
+            echo "Error: dependency pinned to $pin but toolchain is $toolchain"
+            exit 1
+          fi
+
+      - name: The manifest must be refreshed to match the new pin
+        run: |
+          if ! grep -q "\"inputRev\": \"$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)\"" \
+            Fixtures/PinnedTags/lake-manifest.json; then
+            echo "Error: lake-manifest.json still points at the old revision"
+            cat Fixtures/PinnedTags/lake-manifest.json
+            exit 1
+          fi
+
+      - name: This update should succeed
+        if: steps.update.outputs.result != 'update-success'
+        run: exit 1
+
+  # A dependency pinned to a commit is a deliberate pin: rewriting it to a tag
+  # would silently discard it, so it must be left alone and reported — but the
+  # toolchain still moves, since updating it is the point of the action.
+  pinned_sha_e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Bump a package whose dependency is commit-pinned
+        id: update
+        uses: ./
+        with:
+          bump_mode: "pinned-tags"
+          on_update_succeeds: "silent"
+          on_update_fails: "silent"
+          lake_package_directory: "./Fixtures/PinnedSha"
+
+      - name: The commit pin must be untouched
+        run: |
+          if ! git diff --quiet -- Fixtures/PinnedSha/lakefile.lean Fixtures/PinnedSha/lake-manifest.json; then
+            echo "Error: a commit-pinned dependency was rewritten"
+            git diff -- Fixtures/PinnedSha
+            exit 1
+          fi
+
+      - name: The toolchain must still be bumped
+        run: |
+          toolchain=$(cut -d: -f2 Fixtures/PinnedSha/lean-toolchain)
+          echo "toolchain=$toolchain"
+          if [ "$toolchain" = "v4.31.0" ]; then
+            echo "Error: lean-toolchain was not bumped"
+            exit 1
+          fi
+
+      - name: An update must be reported
+        if: steps.update.outputs.result == 'no-update'
+        run: exit 1
+
+  # A package with no git requires has nothing gating its toolchain, so
+  # pinned-tags mode must still bump `lean-toolchain` by itself.
+  pinned_tags_no_deps_e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Bump the toolchain of a dependency-free package
+        id: update
+        uses: ./
+        with:
+          bump_mode: "pinned-tags"
+          on_update_succeeds: "silent"
+          on_update_fails: "silent"
+          lake_package_directory: "./Fixtures/SmokeSuccess"
+
+      - name: The toolchain must be bumped
+        run: |
+          toolchain=$(cut -d: -f2 Fixtures/SmokeSuccess/lean-toolchain)
+          echo "toolchain=$toolchain"
+          if [ "$toolchain" = "v4.16.0" ]; then
+            echo "Error: lean-toolchain was not bumped"
+            exit 1
+          fi
+
+      - name: This update should succeed
+        if: steps.update.outputs.result != 'update-success'
+        run: exit 1
