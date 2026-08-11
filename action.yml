@@ -309,36 +309,29 @@ runs:
     # ------------------------- #
     # when update is successful #
     # ------------------------- #
-    - name: Open PR if post-update validation was successful
-      if: steps.validate-update.outcome == 'success' &&
+    # One PR step for both outcomes: whether the update built is the PR's own
+    # CI's job to report, not the title's.
+    - name: Open a pull request
+      if: (steps.validate-update.outcome == 'success' &&
           inputs.on_update_succeeds == 'pr' &&
-          env.LEAN_UPDATE_DO_UPDATE == 'true' &&
-          env.LEAN_UPDATE_LEAN_TOOLCHAIN_UPDATED == 'true'
+          env.LEAN_UPDATE_DO_UPDATE == 'true') ||
+          (steps.validate-update.outcome == 'failure' &&
+          inputs.on_update_fails == 'pr')
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ inputs.token }}
-        title: "Updates available and ready to merge"
-        body: |
-          The `lean-toolchain` file has been updated to the following content:
-          ```
-          ${{ env.LEAN_UPDATE_NEW_LEAN_TOOLCHAIN_CONTENT }}
-          ```
-        delete-branch: true
-        branch: auto-update-lean/patch
-        labels: "auto-update-lean"
+        title: "chore: Update Lean to ${{ env.LEAN_UPDATE_LATEST_LEAN }}"
+        commit-message: |
+          chore: Update Lean to ${{ env.LEAN_UPDATE_LATEST_LEAN }}
 
-    - name: Open PR if post-update validation was successful
-      if: steps.validate-update.outcome == 'success' &&
-          inputs.on_update_succeeds == 'pr' &&
-          env.LEAN_UPDATE_DO_UPDATE == 'true' &&
-          env.LEAN_UPDATE_LEAN_TOOLCHAIN_UPDATED == 'false'
-      uses: peter-evans/create-pull-request@v8
-      with:
-        token: ${{ inputs.token }}
-        title: "Updates available and ready to merge"
-        body: ""
+          Toolchain and dependencies bumped by lean-update.
+        body: |
+          `lean-toolchain` and dependencies updated for Lean release
+          `${{ env.LEAN_UPDATE_LATEST_LEAN }}` by lean-update.
+
+          Changed files: `${{ env.LEAN_UPDATE_CHANGED_FILES }}`
         delete-branch: true
-        branch: auto-update-lean/patch
+        branch: update/lean-${{ env.LEAN_UPDATE_LATEST_LEAN }}
         labels: "auto-update-lean"
 
     - name: Open issue if post-update validation was successful
@@ -366,21 +359,6 @@ runs:
     # ----------------- #
     # when update fails #
     # ----------------- #
-    - name: Open PR if post-update validation fails
-      if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'pr'
-      uses: peter-evans/create-pull-request@v8
-      with:
-        token: ${{ inputs.token }}
-        title: "Lean/dependency update available (build failing)"
-        body: |
-          An update is available but post-update validation **failed**.
-          Opening this PR anyway (`on_update_fails: pr`) so the changes can be reviewed and CI can report the failure.
-
-          Latest Lean release: `${{ steps.update-lean-toolchain.outputs.latest_lean || steps.bump-pinned.outputs.latest_lean }}`
-        delete-branch: true
-        branch: auto-update-lean/patch
-        labels: "auto-update-lean"
-
     - name: Open issue if post-update validation fails
       if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'issue'
       run: |
