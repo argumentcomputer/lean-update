@@ -1,5 +1,6 @@
 module
 
+import LeanUpdate.BumpPinnedDeps
 import LeanUpdate.CheckChanges
 import LeanUpdate.CreateIssue
 import LeanUpdate.FindDep
@@ -9,6 +10,7 @@ import LeanUpdate.PostUpdateValidation
 
 public def main (args : List String) : IO Unit := do
   match args with
+  | ["bumpPinnedTags"] => runBumpPinnedTags
   | ["checkChanges"] => runCheckChanges
   | ["createIssue"] => runCreateIssue
   | ["findDependencies"] => runFindDependencies

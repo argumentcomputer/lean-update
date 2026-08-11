@@ -23,6 +23,27 @@ public instance : Input ReleaseKindToFetch where
   parse := parseAs ReleaseKindToFetch
   localValue? := some .tagged
 
+/-- Which tagged release channel to track. Only meaningful when `ReleaseKindToFetch` is `tagged`.
+
+Defaults to `stable`: an update lands as a pull request against someone's repository, so pulling
+it onto a release candidate should be a deliberate choice. -/
+public inductive ReleaseChannel where
+  /-- track the latest tagged release, including release candidates -/
+  | rc
+  /-- track only the latest stable (non pre-release) tagged release -/
+  | stable
+deriving Repr, BEq, ToString, HasParser
+
+public instance : Input ReleaseChannel where
+  envName := "RELEASE_CHANNEL"
+  parse := parseAs ReleaseChannel
+  localValue? := some .stable
+
+/-- Whether this channel restricts the toolchain search to stable releases only. -/
+public def ReleaseChannel.stableOnly : ReleaseChannel → Bool
+  | .rc => false
+  | .stable => true
+
 /-- The directory of the target Lake package. This is a wrapper around `FilePath`. -/
 public structure LakePackageDirectory where
   /-- the raw path supplied by the action input -/
@@ -132,3 +153,14 @@ public instance : Input UpdateIfModified where
   envName := "UPDATE_IF_MODIFIED"
   parse := parseAs UpdateIfModified
   localValue? := some .«lake-manifest.json»
+
+/-- Names of git dependencies whose pinned `rev` should be bumped to the target Lean version
+tag. An empty list means "every git `require` in the lakefile that pins a `rev`". -/
+public structure PinnedDeps where
+  /-- the dependency names to manage; empty means all git requires with a `rev` -/
+  val : List String
+
+public instance : Input PinnedDeps where
+  envName := "PINNED_DEPS"
+  parse s := (parseList s).map PinnedDeps.mk
+  localValue? := some ⟨[]⟩

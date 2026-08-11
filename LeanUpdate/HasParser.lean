@@ -52,12 +52,16 @@ public def parseListAux [HasParser α] (input : List String) : Except String (Li
     .ok (headParsed :: restParsed)
 termination_by input.length
 
-/-- parse a string into a list of elements of type `α` -/
+/-- parse a string into a list of elements of type `α`
+
+Separators are commas, spaces, or both, so `[a, b]`, `a b` and `a,b` all parse alike. Commas
+become separators rather than being deleted, since deleting them runs `a,b` together into a
+single element. Empty parts are dropped by `parseListAux`. -/
 public def parseList [HasParser α] (input : String) : Except String (List α) :=
   let inner := input
     |> (fun s : String => if s.startsWith "[" then s.drop 1 |>.copy else s)
     |> (fun s : String => if s.endsWith "]" then s.dropEnd 1 |>.copy else s)
-    |> (String.replace · "," "")
+    |> (String.replace · "," " ")
   let parts := inner.splitOn " "
   parseListAux parts
 

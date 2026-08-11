@@ -122,31 +122,55 @@ def LeanRelease.toTagged! (leanRelease : LeanRelease) : LeanTaggedRelease :=
   | .ok tagged => tagged
   | .error err => panic! s!"Failed to convert LeanRelease '{leanRelease.name}' to tagged release: {err}"
 
+/-- Whether a tagged release is a pre-release (e.g. a release candidate such as `4.32.0-rc1`). -/
+def LeanTaggedRelease.isPrerelease (release : LeanTaggedRelease) : Bool :=
+  release.name.toString.contains '-'
+
+#guard (LeanRelease.toTagged! ⟨.tagged, "v4.32.0-rc1", default⟩).isPrerelease == true
+
+#guard (LeanRelease.toTagged! ⟨.tagged, "v4.32.0", default⟩).isPrerelease == false
+
+/--
+Get the tagged Lean releases, newest first.
+
+`stableOnly` drops pre-releases (release candidates). Argument `now?` is used for test purposes:
+when given, releases newer than it are ignored.
+-/
+public def getLeanTaggedCandidates (stableOnly : Bool := false) (now? : Option DateTime := none) :
+    IO (Array LeanRelease) := do
+  let json ← fetchAllLeanReleaseJson .tagged
+  let releases ← IO.ofExcept <| parseLeanReleaseJson json
+  let filteredReleases := filterLeanReleaseByTime releases now?
+  let taggedReleases ← filteredReleases
+    |>.map LeanRelease.toTagged
+    |>.mapM IO.ofExcept
+  let candidates :=
+    if stableOnly then taggedReleases.filter (fun r => !r.isPrerelease) else taggedReleases
+  pure <| (candidates.qsort (fun r1 r2 => r1.name > r2.name)).map LeanTaggedRelease.toLeanRelease
+
 /--
 Get the latest Lean release of the given `kind : ReleaseKindToFetch`.
 
 Argument `now` is used for test purposes.
 This function return the latest release which is not newer than `now` if `now` is given.
 -/
-public def getLatestLeanRelease (kind : ReleaseKindToFetch) (now? : Option DateTime := none) : IO LeanRelease := do
-  let json ← fetchAllLeanReleaseJson kind
-  let releases ← IO.ofExcept <| parseLeanReleaseJson json
-  let filteredReleases := filterLeanReleaseByTime releases now?
-
-  if h : filteredReleases.size = 0 then
-    throw <| IO.userError s!"No {kind} Lean release found"
-  else
-    match kind with
-    | .nightly => pure filteredReleases[0]
-    | .tagged =>
-      let taggedReleases ← filteredReleases
-        |>.map LeanRelease.toTagged
-        |>.mapM IO.ofExcept
-      let sortedTaggedReleases := taggedReleases.qsort (fun r1 r2 => r1.name > r2.name)
-      if h2 : sortedTaggedReleases.size = 0 then
-        throw <| IO.userError s!"No valid tagged Lean release found"
-      else
-        pure sortedTaggedReleases[0].toLeanRelease
+public def getLatestLeanRelease (kind : ReleaseKindToFetch) (now? : Option DateTime := none)
+    (stableOnly : Bool := false) : IO LeanRelease := do
+  match kind with
+  | .nightly =>
+    let json ← fetchAllLeanReleaseJson kind
+    let releases ← IO.ofExcept <| parseLeanReleaseJson json
+    let filteredReleases := filterLeanReleaseByTime releases now?
+    if h : filteredReleases.size = 0 then
+      throw <| IO.userError s!"No {kind} Lean release found"
+    else
+      pure filteredReleases[0]
+  | .tagged =>
+    let candidates ← getLeanTaggedCandidates stableOnly now?
+    if h : candidates.size = 0 then
+      throw <| IO.userError s!"No valid tagged Lean release found (stableOnly := {stableOnly})"
+    else
+      pure candidates[0]
 
 def String.toDateTime! (s : String) : DateTime :=
   match DateTime.fromISO8601String s with
@@ -181,7 +205,8 @@ public def runUpdateLeanToolchain : IO Unit := do
   let updateLeanToolchain ← GitHub.Action.Input.get UpdateLeanToolchain
 
   let releaseKind ← GitHub.Action.Input.get ReleaseKindToFetch
-  let latestRelease ← getLatestLeanRelease releaseKind
+  let channel ← GitHub.Action.Input.get ReleaseChannel
+  let latestRelease ← getLatestLeanRelease releaseKind (stableOnly := channel.stableOnly)
   IO.println <| log% s!"Latest {releaseKind} Lean release: {latestRelease.toString}"
   GitHub.Action.writeGHOutput "latest_lean" latestRelease.toString
   GitHub.Action.writeGHEnv "LATEST_LEAN" latestRelease.toString

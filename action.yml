@@ -36,6 +36,41 @@ inputs:
     required: false
     default: "tagged"
 
+  release_channel:
+    description: |
+      Which tagged release channel to track. Only meaningful when `release_kind_to_fetch` is `tagged`.
+      Allowed values:
+        * `stable`: track only the latest stable (non pre-release) tagged release (default)
+        * `rc`: track the latest tagged release, including release candidates
+      An update lands as a pull request against someone's repository, so moving onto a release
+      candidate is opt-in.
+    required: false
+    default: "stable"
+
+  bump_mode:
+    description: |
+      How to advance dependencies.
+      Allowed values:
+        * `lake-update`: run `lake update` to advance dependencies (the upstream behavior).
+        * `pinned-tags`: bump `lean-toolchain` to the latest Lean version tag, moving the pinned
+          `rev` of managed git dependencies with it. A dependency that has not tagged that version
+          yet keeps its pin and is reported; post-update validation decides whether the result
+          builds. Use this when dependencies are pinned to Lean-version tags (e.g. `v4.31.0`)
+          rather than tracking a branch.
+      Default: `lake-update`
+    required: false
+    default: "lake-update"
+
+  pinned_deps:
+    description: |
+      Only used when `bump_mode` is `pinned-tags`. A comma- or space-separated list of git
+      dependency names whose pinned `rev` should be bumped. An empty value means every git
+      `require` in the lakefile pinned to a Lean version tag; a dependency pinned to a commit hash
+      or a branch is reported and left alone, since rewriting it would silently discard the pin.
+      Naming it here opts it back in. Both `lakefile.toml` and `lakefile.lean` are supported.
+    required: false
+    default: ""
+
   # ----------------------------------------- #
   # run `lake update` and run build/test/lint #
   # ----------------------------------------- #
@@ -74,6 +109,7 @@ inputs:
       Allowed values:
         * `silent`: Do nothing
         * `issue`: notify the user by creating an issue. No new issue will be created if one already exists.
+        * `pr`: open a pull request anyway. Use this to review the bump even when the build fails.
         * `fail`: fail the action.
       Default: `issue`.
     required: false
@@ -118,7 +154,7 @@ outputs:
       ## Note
       * This is not necessarily matching to the updated content of the lean-toolchain file of the lake package.
       * This value is fetched according to the `release_kind_to_fetch` option.
-    value: ${{ steps.update-lean-toolchain.outputs.latest_lean }}
+    value: ${{ steps.update-lean-toolchain.outputs.latest_lean || steps.bump-pinned.outputs.latest_lean }}
   notify:
     description: |
       Indicates whether there is an event worth notifying the user about.
@@ -148,6 +184,7 @@ runs:
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
 
     - name: Update lean-toolchain file
+      if: inputs.bump_mode == 'lake-update'
       id: update-lean-toolchain
       run: |
         : Update lean-toolchain file
@@ -158,9 +195,11 @@ runs:
         GH_TOKEN: ${{ github.token }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
         RELEASE_KIND_TO_FETCH: ${{ inputs.release_kind_to_fetch }}
+        RELEASE_CHANNEL: ${{ inputs.release_channel }}
         UPDATE_LEAN_TOOLCHAIN: ${{ inputs.update_lean_toolchain }}
 
     - name: Update dependencies of ${{ github.repository }}
+      if: inputs.bump_mode == 'lake-update'
       run: |
         : Update dependencies
         lake exe leanUpdate updateDependencies
@@ -169,6 +208,21 @@ runs:
       env:
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
         LEGACY_UPDATE: ${{ inputs.legacy_update }}
+
+    - name: Bump pinned dependency tags and lean-toolchain in lockstep
+      if: inputs.bump_mode == 'pinned-tags'
+      id: bump-pinned
+      run: |
+        : Bump pinned dependency tags
+        lake exe leanUpdate bumpPinnedTags
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+        LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
+        RELEASE_KIND_TO_FETCH: ${{ inputs.release_kind_to_fetch }}
+        RELEASE_CHANNEL: ${{ inputs.release_channel }}
+        PINNED_DEPS: ${{ inputs.pinned_deps }}
 
     - name: Check if lean-toolchain or lake-manifest.json were updated
       run: |
@@ -255,6 +309,7 @@ runs:
           env.LEAN_UPDATE_LEAN_TOOLCHAIN_UPDATED == 'true'
       uses: peter-evans/create-pull-request@v8
       with:
+        token: ${{ inputs.token }}
         title: "Updates available and ready to merge"
         body: |
           The `lean-toolchain` file has been updated to the following content:
@@ -272,6 +327,7 @@ runs:
           env.LEAN_UPDATE_LEAN_TOOLCHAIN_UPDATED == 'false'
       uses: peter-evans/create-pull-request@v8
       with:
+        token: ${{ inputs.token }}
         title: "Updates available and ready to merge"
         body: ""
         delete-branch: true
@@ -303,6 +359,21 @@ runs:
     # ----------------- #
     # when update fails #
     # ----------------- #
+    - name: Open PR if post-update validation fails
+      if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'pr'
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ inputs.token }}
+        title: "Lean/dependency update available (build failing)"
+        body: |
+          An update is available but post-update validation **failed**.
+          Opening this PR anyway (`on_update_fails: pr`) so the changes can be reviewed and CI can report the failure.
+
+          Latest Lean release: `${{ steps.update-lean-toolchain.outputs.latest_lean || steps.bump-pinned.outputs.latest_lean }}`
+        delete-branch: true
+        branch: auto-update-lean/patch
+        labels: "auto-update-lean"
+
     - name: Open issue if post-update validation fails
       if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'issue'
       run: |
