@@ -8,7 +8,12 @@ inputs:
   # ----------------------------- #
   lake_package_directory:
     description: |
-      The directory containing the Lake package to update.
+      The directory containing the Lake package to update, relative to the workspace.
+      Accepts a comma- or space-separated list of directories, and an entry ending in `/*`
+      expands to every immediate subdirectory containing a lakefile, so a repository of sibling
+      packages can be updated in one invocation (e.g. `templates/*`). With multiple directories
+      the outputs aggregate: an update or failure in any directory reports as such, and the
+      Mathlib cache prefetch (which understands a single directory) is skipped.
       This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
     required: false
     default: "."
@@ -153,6 +158,8 @@ outputs:
 
       ## Note
       * This is not necessarily matching to the updated content of the lean-toolchain file of the lake package.
+        However, in `pinned-tags` bump mode an applied update always moves `lean-toolchain` to exactly
+        this release, so workflows can read the resulting version from this output.
       * This value is fetched according to the `release_kind_to_fetch` option.
     value: ${{ steps.update-lean-toolchain.outputs.latest_lean || steps.bump-pinned.outputs.latest_lean }}
   notify:

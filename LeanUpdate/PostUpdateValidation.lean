@@ -91,10 +91,9 @@ public def PostUpdateValidationResult.isSuccess (result : PostUpdateValidationRe
 public def PostUpdateValidationResult.isFailure (result : PostUpdateValidationResult) : Bool :=
   !result.isSuccess
 
-/-- Run post update validation including `lake build`, `lake test`, and `lake lint` commands. -/
-public def runPostUpdateValidation : IO PostUpdateValidationResult := do
-  let buildArgs ← GitHub.Action.Input.get BuildArgs
-  let targetLakePackageDir ← getTargetLakePackageDirectory
+/-- Run `lake build`, and `lake test`/`lake lint` when drivers exist, in one directory. -/
+def validatePackage (buildArgs : BuildArgs) (targetLakePackageDir : FilePath) :
+    IO PostUpdateValidationResult := do
   let buildResult ← runLakeBuild targetLakePackageDir buildArgs
 
   let hasTestDriverResult ← hasTestDriver targetLakePackageDir
@@ -118,3 +117,35 @@ public def runPostUpdateValidation : IO PostUpdateValidationResult := do
       pure none
 
   return { buildResult := buildResult, testResult? := testResult?, lintResult? := lintResult? }
+
+/-- Validate every target Lake package. Failures are aggregated across directories, each error
+prefixed with the directory it came from, so one broken package fails the whole validation. -/
+public def runPostUpdateValidation : IO PostUpdateValidationResult := do
+  let buildArgs ← GitHub.Action.Input.get BuildArgs
+  let dirs ← getTargetLakePackageDirectories
+  let mut buildErrs : Array String := #[]
+  let mut testErrs : Array String := #[]
+  let mut lintErrs : Array String := #[]
+  let mut hasTest := false
+  let mut hasLint := false
+  for dir in dirs do
+    if dirs.size > 1 then
+      IO.println <| log% s!"Validating {dir}"
+    let result ← validatePackage buildArgs dir
+    if let .error e := result.buildResult then
+      buildErrs := buildErrs.push s!"{dir}: {e}"
+    if let some testResult := result.testResult? then
+      hasTest := true
+      if let .error e := testResult then
+        testErrs := testErrs.push s!"{dir}: {e}"
+    if let some lintResult := result.lintResult? then
+      hasLint := true
+      if let .error e := lintResult then
+        lintErrs := lintErrs.push s!"{dir}: {e}"
+  let merge (errs : Array String) : Except String Unit :=
+    if errs.isEmpty then .ok () else .error (String.intercalate "\n" errs.toList)
+  return {
+    buildResult := merge buildErrs
+    testResult? := if hasTest then some (merge testErrs) else none
+    lintResult? := if hasLint then some (merge lintErrs) else none
+  }

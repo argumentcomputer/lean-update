@@ -211,19 +211,20 @@ public def runUpdateLeanToolchain : IO Unit := do
   GitHub.Action.writeGHOutput "latest_lean" latestRelease.toString
   GitHub.Action.writeGHEnv "LATEST_LEAN" latestRelease.toString
 
-  let hasDependency ← LeanUpdate.hasDependency
-  match updateLeanToolchain, hasDependency with
-  | .auto, false =>
-    let targetLakePackageDir ← getTargetLakePackageDirectory
-    let leanToolchainFile := targetLakePackageDir / "lean-toolchain"
+  let dirs ← getTargetLakePackageDirectories
+  for targetLakePackageDir in dirs do
+    let hasDependency := !(← LeanUpdate.getDependenciesIn targetLakePackageDir).isEmpty
+    match updateLeanToolchain, hasDependency with
+    | .auto, false =>
+      let leanToolchainFile := targetLakePackageDir / "lean-toolchain"
 
-    let oldLeanToolChainContent := (← IO.FS.readFile leanToolchainFile).trimAscii.copy
-    let newLeanToolchainContent := s!"leanprover/lean4:{latestRelease.toString}"
+      let oldLeanToolChainContent := (← IO.FS.readFile leanToolchainFile).trimAscii.copy
+      let newLeanToolchainContent := s!"leanprover/lean4:{latestRelease.toString}"
 
-    IO.FS.writeFile leanToolchainFile s!"{newLeanToolchainContent}\n"
-    if oldLeanToolChainContent == newLeanToolchainContent then
-      IO.println <| log% s!"lean-toolchain file is already up-to-date with the latest {releaseKind} Lean release."
-    else
-      IO.println <| log% s!"Updated {leanToolchainFile} with the latest {releaseKind} Lean release."
-  | _, _ =>
-    IO.println <| log% "Skipping updating lean-toolchain file."
+      IO.FS.writeFile leanToolchainFile s!"{newLeanToolchainContent}\n"
+      if oldLeanToolChainContent == newLeanToolchainContent then
+        IO.println <| log% s!"lean-toolchain file is already up-to-date with the latest {releaseKind} Lean release."
+      else
+        IO.println <| log% s!"Updated {leanToolchainFile} with the latest {releaseKind} Lean release."
+    | _, _ =>
+      IO.println <| log% s!"Skipping updating lean-toolchain file in {targetLakePackageDir}."

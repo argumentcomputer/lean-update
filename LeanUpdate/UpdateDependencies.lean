@@ -20,16 +20,19 @@ def lakeUpdateCommand (legacyUpdate : LegacyUpdate) : String :=
 /-- Run the dependency update command. -/
 public def runUpdateDependencies : IO Unit := do
   let legacyUpdate ← GitHub.Action.Input.get LegacyUpdate
-  let targetLakePackageDir ← getTargetLakePackageDirectory
+  let dirs ← getTargetLakePackageDirectories
   if legacyUpdate then
     IO.println "Using legacy update command"
   else
     IO.println "Using standard update command"
 
-  let out ← IO.Process.lakeOutput targetLakePackageDir (args := lakeUpdateArgs legacyUpdate)
-  unless out.stdout.isEmpty do
-    IO.print out.stdout
-  unless out.stderr.isEmpty do
-    IO.print out.stderr
-  if out.exitCode != 0 then
-    throw <| IO.userError s!"Dependency update command failed with exit code {out.exitCode}: {lakeUpdateCommand legacyUpdate}"
+  for targetLakePackageDir in dirs do
+    if dirs.size > 1 then
+      IO.println s!"Updating dependencies in {targetLakePackageDir}"
+    let out ← IO.Process.lakeOutput targetLakePackageDir (args := lakeUpdateArgs legacyUpdate)
+    unless out.stdout.isEmpty do
+      IO.print out.stdout
+    unless out.stderr.isEmpty do
+      IO.print out.stderr
+    if out.exitCode != 0 then
+      throw <| IO.userError s!"Dependency update command failed with exit code {out.exitCode}: {lakeUpdateCommand legacyUpdate}"

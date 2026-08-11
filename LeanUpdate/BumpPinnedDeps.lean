@@ -221,31 +221,8 @@ def parseLeanRequires (lines : Array String) : Array RequireBlock := Id.run do
   let blocks := parseLeanRequires lines
   blocks.size == 1 && blocks[0]!.rev == some "v4.31.0" && blocks[0]!.revLine == some 0
 
-/-- Bump `lean-toolchain` to the latest release for the configured `ReleaseKindToFetch` /
-`ReleaseChannel`, moving the pinned Lean-version tags of managed git dependencies along with
-it.
-
-The toolchain bump is never gated on the dependencies: updating the toolchain is the point of
-this action. A managed dependency whose remote has the target tag is bumped in lockstep and its
-manifest entry refreshed; one that has not tagged the release yet keeps its pin and is
-reported, and post-update validation decides whether the mixture still builds. Because each
-file is compared to the target individually, a dependency that tags the release late catches up
-on a rerun after the toolchain has already moved.
-
-Managed dependencies are the names listed in `PinnedDeps`, or, when that list is empty, every
-git `require` in the lakefile pinned to a Lean version tag. A dependency pinned to a commit hash
-or a branch is a deliberate pin, so it is reported and left alone unless named in `PinnedDeps`.
-Both `lakefile.toml` and `lakefile.lean` are supported; if a package has both, the `.toml` one
-wins, as it does in Lake. -/
-public def runBumpPinnedTags : IO Unit := do
-  let releaseKind ← GitHub.Action.Input.get ReleaseKindToFetch
-  let channel ← GitHub.Action.Input.get ReleaseChannel
-  let pinnedDeps ← GitHub.Action.Input.get PinnedDeps
-  let targetDir ← getTargetLakePackageDirectory
-
-  if releaseKind == .nightly then
-    throw <| IO.userError "bumpPinnedTags requires release_kind_to_fetch = 'tagged'"
-
+/-- Bump one package to the target release. Returns whether any file was written. -/
+def bumpPackage (pinnedDeps : PinnedDeps) (target : String) (targetDir : FilePath) : IO Bool := do
   let toolchainFile := targetDir / "lean-toolchain"
   let currentToolchain := (← IO.FS.readFile toolchainFile).trimAscii.copy
 
@@ -254,9 +231,8 @@ public def runBumpPinnedTags : IO Unit := do
   let tomlExists ← tomlFile.pathExists
   let leanExists ← leanFile.pathExists
   unless tomlExists || leanExists do
-    IO.println <| log% "No lakefile.toml or lakefile.lean found. Skipping."
-    GitHub.Action.writeGHOutput "pinned_bump" "skipped"
-    return
+    IO.println <| log% s!"No lakefile.toml or lakefile.lean found in {targetDir}. Skipping."
+    return false
 
   let lakefile := if tomlExists then tomlFile else leanFile
   let parse := if tomlExists then parseRequireBlocks else parseLeanRequires
@@ -276,14 +252,6 @@ public def runBumpPinnedTags : IO Unit := do
           else
             "it is not listed in `pinned_deps`"
         IO.println <| log% s!"Not managing {name}: {reason}."
-
-  let candidates ← getLeanTaggedCandidates channel.stableOnly
-  let some newest := candidates[0]?
-    | throw <| IO.userError "No tagged Lean release found"
-  let target := newest.toString
-  IO.println <| log% s!"Latest {releaseKind} Lean release: {target}"
-  GitHub.Action.writeGHOutput "latest_lean" target
-  GitHub.Action.writeGHEnv "LATEST_LEAN" target
 
   -- The toolchain is the thing being updated, so it always moves to the target. Each managed
   -- dependency moves with it when its remote has the target tag; one that lags keeps its pin
@@ -306,8 +274,7 @@ public def runBumpPinnedTags : IO Unit := do
   let toolchainBumped := s!"leanprover/lean4:{target}" != currentToolchain
   if !toolchainBumped && bumped.isEmpty then
     IO.println <| log% s!"Toolchain already at {target} and no dependency can move; nothing to do."
-    GitHub.Action.writeGHOutput "pinned_bump" "skipped"
-    return
+    return false
 
   unless bumped.isEmpty do
     IO.FS.writeFile lakefile (String.intercalate "\n" newLines.toList)
@@ -326,4 +293,48 @@ public def runBumpPinnedTags : IO Unit := do
     unless out.stderr.isEmpty do IO.print out.stderr
     if out.exitCode != 0 then
       IO.println <| log% s!"warning: `lake update` exited with {out.exitCode}"
-  GitHub.Action.writeGHOutput "pinned_bump" "updated"
+  return true
+
+/-- Bump `lean-toolchain` to the latest release for the configured `ReleaseKindToFetch` /
+`ReleaseChannel`, moving the pinned Lean-version tags of managed git dependencies along with
+it.
+
+The toolchain bump is never gated on the dependencies: updating the toolchain is the point of
+this action. A managed dependency whose remote has the target tag is bumped in lockstep and its
+manifest entry refreshed; one that has not tagged the release yet keeps its pin and is
+reported, and post-update validation decides whether the mixture still builds. Because each
+file is compared to the target individually, a dependency that tags the release late catches up
+on a rerun after the toolchain has already moved.
+
+Managed dependencies are the names listed in `PinnedDeps`, or, when that list is empty, every
+git `require` in the lakefile pinned to a Lean version tag. A dependency pinned to a commit hash
+or a branch is a deliberate pin, so it is reported and left alone unless named in `PinnedDeps`.
+Both `lakefile.toml` and `lakefile.lean` are supported; if a package has both, the `.toml` one
+wins, as it does in Lake.
+
+Every target directory is bumped to the same release; `pinned_bump` reports `updated` if any of
+them changed. -/
+public def runBumpPinnedTags : IO Unit := do
+  let releaseKind ← GitHub.Action.Input.get ReleaseKindToFetch
+  let channel ← GitHub.Action.Input.get ReleaseChannel
+  let pinnedDeps ← GitHub.Action.Input.get PinnedDeps
+  let dirs ← getTargetLakePackageDirectories
+
+  if releaseKind == .nightly then
+    throw <| IO.userError "bumpPinnedTags requires release_kind_to_fetch = 'tagged'"
+
+  let candidates ← getLeanTaggedCandidates channel.stableOnly
+  let some newest := candidates[0]?
+    | throw <| IO.userError "No tagged Lean release found"
+  let target := newest.toString
+  IO.println <| log% s!"Latest {releaseKind} Lean release: {target}"
+  GitHub.Action.writeGHOutput "latest_lean" target
+  GitHub.Action.writeGHEnv "LATEST_LEAN" target
+
+  let mut anyUpdated := false
+  for dir in dirs do
+    if dirs.size > 1 then
+      IO.println <| log% s!"Updating {dir}"
+    if ← bumpPackage pinnedDeps target dir then
+      anyUpdated := true
+  GitHub.Action.writeGHOutput "pinned_bump" (if anyUpdated then "updated" else "skipped")

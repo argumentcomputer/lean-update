@@ -272,3 +272,47 @@ jobs:
       - name: This update should succeed
         if: steps.update.outputs.result != 'update-success'
         run: exit 1
+
+  # Multiple directories in one invocation: both packages must land on the
+  # same release, and the outputs must aggregate across them.
+  pinned_tags_multi_dir_e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Bump two packages at once
+        id: update
+        uses: ./
+        with:
+          bump_mode: "pinned-tags"
+          on_update_succeeds: "silent"
+          on_update_fails: "silent"
+          lake_package_directory: "./Fixtures/PinnedTags ./Fixtures/SmokeSuccess"
+
+      - name: Both toolchains must be bumped to the same release
+        run: |
+          a=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
+          b=$(cut -d: -f2 Fixtures/SmokeSuccess/lean-toolchain)
+          echo "PinnedTags=$a SmokeSuccess=$b"
+          if [ "$a" = "v4.31.0" ] || [ "$b" = "v4.16.0" ]; then
+            echo "Error: a package was not bumped"
+            exit 1
+          fi
+          if [ "$a" != "$b" ]; then
+            echo "Error: packages diverged"
+            exit 1
+          fi
+
+      - name: The release must be reported as an output
+        run: |
+          echo "latest_lean=${{ steps.update.outputs.latest_lean }}"
+          expected=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
+          if [ "${{ steps.update.outputs.latest_lean }}" != "$expected" ]; then
+            echo "Error: expected $expected"
+            exit 1
+          fi
+
+      - name: This update should succeed
+        if: steps.update.outputs.result != 'update-success'
+        run: exit 1

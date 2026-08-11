@@ -84,6 +84,36 @@ public def getTargetLakePackageDirectory : IO FilePath := do
   let workspace? := (← IO.getEnv "GITHUB_WORKSPACE").map FilePath.mk
   pure <| resolveLakePackageDir workspace? packageDir
 
+/-- Resolve the target Lake package directories supplied by the action input.
+
+The input is a comma- or whitespace-separated list of paths, each resolved relative to the
+GitHub workspace. An entry ending in `/*` expands to the subdirectories of its parent that
+contain a lakefile, sorted by name, so a repository of sibling packages can be updated in one
+invocation (e.g. `templates/*`). -/
+public def getTargetLakePackageDirectories : IO (Array FilePath) := do
+  let packageDir ← GitHub.Action.Input.get LakePackageDirectory
+  let workspace? := (← IO.getEnv "GITHUB_WORKSPACE").map FilePath.mk
+  let raw := packageDir.val.toString
+  let entries := raw.split (fun c => c == ',' || c == ' ' || c == '\n')
+    |>.map (fun s => s.trimAscii.copy)
+    |>.filter (fun s => !s.isEmpty)
+  let mut dirs : Array FilePath := #[]
+  for entry in entries do
+    if entry.endsWith "/*" then
+      let parent := resolveLakePackageDir workspace? (FilePath.mk (entry.dropEnd 2).copy)
+      let mut found : Array FilePath := #[]
+      for child in (← parent.readDir) do
+        if (← child.path.isDir) then
+          if (← (child.path / "lakefile.toml").pathExists)
+              || (← (child.path / "lakefile.lean").pathExists) then
+            found := found.push child.path
+      dirs := dirs ++ found.qsort (fun a b => a.toString < b.toString)
+    else
+      dirs := dirs.push (resolveLakePackageDir workspace? (FilePath.mk entry))
+  if dirs.isEmpty then
+    throw <| IO.userError s!"No Lake package directories found for input '{raw}'"
+  return dirs
+
 /-- The input whether to update the `lean-toolchain` file. -/
 public inductive UpdateLeanToolchain where
   | auto
