@@ -309,14 +309,26 @@ runs:
     # ------------------------- #
     # when update is successful #
     # ------------------------- #
+    # An open PR for this release is left untouched: it may carry review
+    # fixes, and create-pull-request would force-push them away.
+    - name: Check for an open update PR
+      id: existing-pr
+      run: |
+        : Check for an open update PR
+        echo "open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "update/lean-$LEAN_UPDATE_LATEST_LEAN" --state open --json number --jq length)" | tee -a "$GITHUB_OUTPUT"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+
     # One PR step for both outcomes: whether the update built is the PR's own
     # CI's job to report, not the title's.
     - name: Open a pull request
-      if: (steps.validate-update.outcome == 'success' &&
+      if: steps.existing-pr.outputs.open == '0' &&
+          ((steps.validate-update.outcome == 'success' &&
           inputs.on_update_succeeds == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true') ||
           (steps.validate-update.outcome == 'failure' &&
-          inputs.on_update_fails == 'pr')
+          inputs.on_update_fails == 'pr'))
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ inputs.token }}
