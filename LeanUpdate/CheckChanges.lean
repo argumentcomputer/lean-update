@@ -24,6 +24,10 @@ def UpdateResult.newContent : UpdateResult → String
 structure CheckChangesResult where
   lakeManifest : UpdateResult
   leanToolchain : UpdateResult
+  /-- the name of the lakefile present in the directory -/
+  lakefileName : String
+  /-- whether that lakefile changed; pinned-tag bumping rewrites it -/
+  lakefile : UpdateResult
 
 /-- Check if there are any diffs.
 
@@ -51,13 +55,23 @@ def checkFile (targetLakePackageDir : FilePath) (file : FilePath) : IO UpdateRes
 def checkChanges (targetLakePackageDir : FilePath) : IO CheckChangesResult := do
   let leanToolchainResult ← checkFile targetLakePackageDir "lean-toolchain"
   let lakeManifestResult ← checkFile targetLakePackageDir "lake-manifest.json"
-  pure { lakeManifest := lakeManifestResult, leanToolchain := leanToolchainResult }
+  let lakefileName :=
+    if ← (targetLakePackageDir / "lakefile.toml").pathExists then "lakefile.toml"
+    else "lakefile.lean"
+  let lakefileResult ← checkFile targetLakePackageDir lakefileName
+  pure {
+    lakeManifest := lakeManifestResult
+    leanToolchain := leanToolchainResult
+    lakefileName := lakefileName
+    lakefile := lakefileResult
+  }
 
 /-- The per-directory changed files, with names prefixed by their directory when more than one
 target directory is configured. -/
 def changedFilesOf (multi : Bool) (dir : FilePath) (result : CheckChangesResult) : List String :=
   let pfx := if multi then s!"{dir}/" else ""
-  [("lake-manifest.json", result.lakeManifest), ("lean-toolchain", result.leanToolchain)]
+  [("lean-toolchain", result.leanToolchain), (result.lakefileName, result.lakefile),
+    ("lake-manifest.json", result.lakeManifest)]
     |>.filter (fun (_, res) => res.isChanged)
     |>.map (fun (name, _) => pfx ++ name)
 
@@ -87,7 +101,8 @@ public def runCheckChanges : IO Unit := do
   let mut newLeanToolchainContent := ""
   for dir in dirs do
     let result ← checkChanges dir
-    let dirChanged := [result.lakeManifest, result.leanToolchain].any UpdateResult.isChanged
+    let dirChanged :=
+      [result.lakeManifest, result.leanToolchain, result.lakefile].any UpdateResult.isChanged
     filesChanged := filesChanged || dirChanged
     doUpdate := doUpdate ||
       match updateIfModified with
@@ -103,7 +118,7 @@ public def runCheckChanges : IO Unit := do
     leanToolchainUpdated := leanToolchainUpdated || result.leanToolchain.isChanged
 
   GitHub.Action.writeGHEnv "FILES_CHANGED" (toString filesChanged)
-  GitHub.Action.writeGHEnv "CHANGED_FILES" (toString changedFiles)
+  GitHub.Action.writeGHEnv "CHANGED_FILES" (String.intercalate ", " changedFiles)
   GitHub.Action.writeGHEnv "DO_UPDATE" (toString doUpdate)
   GitHub.Action.writeGHEnv "LEAN_TOOLCHAIN_UPDATED" (toString leanToolchainUpdated)
 

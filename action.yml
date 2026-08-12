@@ -326,10 +326,7 @@ runs:
 
           Toolchain and dependencies bumped by lean-update.
         body: |
-          `lean-toolchain` and dependencies updated for Lean release
-          `${{ env.LEAN_UPDATE_LATEST_LEAN }}` by lean-update.
-
-          Changed files: `${{ env.LEAN_UPDATE_CHANGED_FILES }}`
+          `lean-toolchain` and dependencies updated for Lean release `${{ env.LEAN_UPDATE_LATEST_LEAN }}` by [lean-update](https://github.com/argumentcomputer/lean-update).
         delete-branch: true
         branch: update/lean-${{ env.LEAN_UPDATE_LATEST_LEAN }}
         labels: "auto-update-lean"
