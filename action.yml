@@ -93,6 +93,21 @@ inputs:
       Build arguments to pass to `lake build` during post-update validation.
     required: false
     default: "--log-level=warning"
+  validate:
+    description: |
+      Whether to run post-update validation (`lake build`, and `lake test`/`lake lint` when
+      drivers exist) after an update: `true` or `false`.
+
+      When unset, defaults to `false` if both `on_update_succeeds` and `on_update_fails` are
+      `pr` — the same PR opens on either outcome and that PR's own CI is the authority on
+      whether the update builds, so validation would rebuild the whole package (and its
+      dependencies, uncached) only to produce a verdict nothing consumes — and `true`
+      otherwise. Note the `commit` and `issue` outcomes require a real validation verdict and
+      will not fire with `validate: false`.
+
+      When validation is skipped and an update occurred, `result` reports `update-unvalidated`.
+    required: false
+    default: ""
 
   # ------------------------- #
   # commit or notify the user #
@@ -150,6 +165,7 @@ outputs:
         * `no-update`: No update was available.
         * `update-success`: An update was available and post-update validation was successful.
         * `update-fail`: An update was available but post-update validation failed.
+        * `update-unvalidated`: An update was available and validation was skipped (see `validate`).
     value: ${{ steps.record-result.outputs.outcome }}
   latest_lean:
     description: |
@@ -240,8 +256,29 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
 
+    - name: Decide whether to validate
+      id: validation-mode
+      run: |
+        : Decide whether to validate
+        if [ "$VALIDATE" = "false" ]; then
+          run=false
+        elif [ "$VALIDATE" = "true" ]; then
+          run=true
+        elif [ "$ON_SUCCESS" = "pr" ] && [ "$ON_FAILURE" = "pr" ]; then
+          echo "Both outcomes open a PR, whose own CI is the authority; skipping validation"
+          run=false
+        else
+          run=true
+        fi
+        echo "run=$run" | tee -a "$GITHUB_OUTPUT"
+      shell: bash
+      env:
+        VALIDATE: ${{ inputs.validate }}
+        ON_SUCCESS: ${{ inputs.on_update_succeeds }}
+        ON_FAILURE: ${{ inputs.on_update_fails }}
+
     - name: Prepare Lean and get Mathlib cache
-      if: env.LEAN_UPDATE_FILES_CHANGED == 'true'
+      if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
       id: prepare-lean
       continue-on-error: true
       uses: leanprover/lean-action@v1
@@ -256,7 +293,7 @@ runs:
         GH_TOKEN: ${{ github.token }}
 
     - name: Validate updated Lean package
-      if: env.LEAN_UPDATE_FILES_CHANGED == 'true'
+      if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
       id: validate-update
       continue-on-error: true
       run: |
@@ -284,6 +321,9 @@ runs:
         elif [ "${{ steps.validate-update.outcome }}" == "failure" ]; then
           echo "Update available but validation fails"
           echo "outcome=update-fail" >> $GITHUB_OUTPUT
+        elif [ "${{ steps.validate-update.outcome }}" == "skipped" ]; then
+          echo "Update available; validation skipped"
+          echo "outcome=update-unvalidated" >> $GITHUB_OUTPUT
         fi
       shell: bash
 
@@ -299,6 +339,9 @@ runs:
           echo "notify=true" >> $GITHUB_OUTPUT
         elif [ "${{ steps.validate-update.outcome }}" == "failure" ]; then
           echo "Updates available but validation failed - should notify"
+          echo "notify=true" >> $GITHUB_OUTPUT
+        elif [ "${{ steps.validate-update.outcome }}" == "skipped" ] && [ "${{ env.LEAN_UPDATE_DO_UPDATE }}" == "true" ]; then
+          echo "Updates available with validation skipped - should notify"
           echo "notify=true" >> $GITHUB_OUTPUT
         else
           echo "No need to notify in this case"
@@ -328,7 +371,11 @@ runs:
           inputs.on_update_succeeds == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true') ||
           (steps.validate-update.outcome == 'failure' &&
-          inputs.on_update_fails == 'pr'))
+          inputs.on_update_fails == 'pr') ||
+          (steps.validate-update.outcome == 'skipped' &&
+          inputs.on_update_succeeds == 'pr' &&
+          inputs.on_update_fails == 'pr' &&
+          env.LEAN_UPDATE_DO_UPDATE == 'true'))
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ inputs.token }}
