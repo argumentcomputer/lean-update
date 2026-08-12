@@ -112,6 +112,14 @@ inputs:
   # ------------------------- #
   # commit or notify the user #
   # ------------------------- #
+  pr:
+    description: |
+      When `true`, always open a pull request for an update, whatever the validation outcome:
+      shorthand for setting both `on_update_succeeds` and `on_update_fails` to `pr`, taking
+      precedence over both. With it, validation is skipped by default (see `validate`), since
+      the PR's own CI is the authority on whether the update builds.
+    required: false
+    default: ""
   on_update_succeeds:
     description: |
       What to do when an update is available and post-update validation is successful.
@@ -190,6 +198,26 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # `pr: true` collapses the per-outcome settings; every later condition
+    # reads the normalized values so the two forms cannot disagree.
+    - name: Resolve update outcomes
+      id: outcomes
+      run: |
+        : Resolve update outcomes
+        succ="$ON_SUCCESS"
+        fail="$ON_FAILURE"
+        if [ "$PR" = "true" ]; then
+          succ=pr
+          fail=pr
+        fi
+        echo "on-success=$succ" | tee -a "$GITHUB_OUTPUT"
+        echo "on-failure=$fail" | tee -a "$GITHUB_OUTPUT"
+      shell: bash
+      env:
+        PR: ${{ inputs.pr }}
+        ON_SUCCESS: ${{ inputs.on_update_succeeds }}
+        ON_FAILURE: ${{ inputs.on_update_fails }}
+
     - name: Install elan
       run: |
         : Install elan
@@ -274,8 +302,8 @@ runs:
       shell: bash
       env:
         VALIDATE: ${{ inputs.validate }}
-        ON_SUCCESS: ${{ inputs.on_update_succeeds }}
-        ON_FAILURE: ${{ inputs.on_update_fails }}
+        ON_SUCCESS: ${{ steps.outcomes.outputs.on-success }}
+        ON_FAILURE: ${{ steps.outcomes.outputs.on-failure }}
 
     - name: Prepare Lean and get Mathlib cache
       if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
@@ -368,13 +396,13 @@ runs:
     - name: Open a pull request
       if: steps.existing-pr.outputs.open == '0' &&
           ((steps.validate-update.outcome == 'success' &&
-          inputs.on_update_succeeds == 'pr' &&
+          steps.outcomes.outputs.on-success == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true') ||
           (steps.validate-update.outcome == 'failure' &&
-          inputs.on_update_fails == 'pr') ||
+          steps.outcomes.outputs.on-failure == 'pr') ||
           (steps.validate-update.outcome == 'skipped' &&
-          inputs.on_update_succeeds == 'pr' &&
-          inputs.on_update_fails == 'pr' &&
+          steps.outcomes.outputs.on-success == 'pr' &&
+          steps.outcomes.outputs.on-failure == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true'))
       uses: peter-evans/create-pull-request@v8
       with:
@@ -391,7 +419,7 @@ runs:
         labels: "auto-update-lean"
 
     - name: Open issue if post-update validation was successful
-      if: steps.validate-update.outcome == 'success' && inputs.on_update_succeeds == 'issue' && env.LEAN_UPDATE_DO_UPDATE == 'true'
+      if: steps.validate-update.outcome == 'success' && steps.outcomes.outputs.on-success == 'issue' && env.LEAN_UPDATE_DO_UPDATE == 'true'
       run: |
         : Open issue if post-update validation was successful
         lake exe leanUpdate createIssue
@@ -404,7 +432,7 @@ runs:
       working-directory: ${{ github.action_path }}
 
     - name: Commit update if post-update validation was successful
-      if: steps.validate-update.outcome == 'success' && inputs.on_update_succeeds == 'commit' && env.LEAN_UPDATE_DO_UPDATE == 'true'
+      if: steps.validate-update.outcome == 'success' && steps.outcomes.outputs.on-success == 'commit' && env.LEAN_UPDATE_DO_UPDATE == 'true'
       uses: EndBug/add-and-commit@v10
       with:
         default_author: github_actions
@@ -416,7 +444,7 @@ runs:
     # when update fails #
     # ----------------- #
     - name: Open issue if post-update validation fails
-      if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'issue'
+      if: steps.validate-update.outcome == 'failure' && steps.outcomes.outputs.on-failure == 'issue'
       run: |
         : Open issue if post-update validation fails
         lake exe leanUpdate createIssue
@@ -428,7 +456,7 @@ runs:
       working-directory: ${{ github.action_path }}
 
     - name: Action fails if post-update validation fails
-      if: steps.validate-update.outcome == 'failure' && inputs.on_update_fails == 'fail'
+      if: steps.validate-update.outcome == 'failure' && steps.outcomes.outputs.on-failure == 'fail'
       run: |
         : Action fails if post-update validation fails
         exit 1
