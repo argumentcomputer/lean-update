@@ -62,9 +62,11 @@ inputs:
         * `lake-update`: run `lake update` to advance dependencies (the upstream behavior).
         * `pinned-tags`: bump `lean-toolchain` to the latest Lean version tag, moving the pinned
           `rev` of managed git dependencies with it. A dependency that has not tagged that version
-          yet keeps its pin and is reported; post-update validation decides whether the result
-          builds. Use this when dependencies are pinned to Lean-version tags (e.g. `v4.31.0`)
-          rather than tracking a branch.
+          — Lean ships patch releases most of the ecosystem skips, so there is no `batteries`
+          `v4.33.1` — moves to the newest tag it does publish below the target instead. Only one
+          with nothing at or below the target keeps its pin and is reported; post-update
+          validation decides whether the result builds. Use this when dependencies are pinned to
+          Lean-version tags (e.g. `v4.31.0`) rather than tracking a branch.
       Default: `lake-update`
     required: false
     default: "lake-update"

@@ -97,8 +97,11 @@ def filterLeanReleaseByTime (releases : Array LeanRelease) (cutoff? : Option Dat
   | none => releases
 
 /-- parse `name` part of LeanRelease.
-This function is only for tagged releases. -/
-def parseLeanTagVersion (s : String) : Except String StdVer :=
+This function is only for tagged releases.
+
+Exposed so that downstream `#guard`s comparing version tags can evaluate it. -/
+@[expose]
+public def parseLeanTagVersion (s : String) : Except String StdVer :=
   StdVer.parse (if s.startsWith "v" then (s.drop 1).copy else s)
 
 -- test for `parseLeanTagVersion`
