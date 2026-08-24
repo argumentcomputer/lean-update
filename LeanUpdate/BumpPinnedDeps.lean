@@ -92,13 +92,21 @@ def parseRequireBlocks (lines : Array String) : Array RequireBlock := Id.run do
     blocks[0]!.rev == some "v4.31.0" &&
     blocks[0]!.revLine == some 5
 
-/-- Whether a git remote has a tag with the given name. -/
-def remoteHasTag (gitUrl tag : String) : IO Bool := do
+/-- Every tag a git remote publishes, as bare tag names.
+
+An unreachable remote yields no tags rather than an error, which reads downstream as "this
+dependency cannot move" — the same conclusion as a remote that simply lacks the tag. -/
+def remoteTags (gitUrl : String) : IO (Array String) := do
   let out ← IO.Process.output {
     cmd := "git"
-    args := #["ls-remote", "--tags", gitUrl, s!"refs/tags/{tag}"]
+    args := #["ls-remote", "--tags", "--refs", gitUrl]
   }
-  pure <| out.exitCode == 0 && !out.stdout.trimAscii.copy.isEmpty
+  if out.exitCode != 0 then
+    return #[]
+  return (out.stdout.splitOn "\n").foldl (init := #[]) fun acc line =>
+    match line.splitOn "refs/tags/" with
+    | [_, tag] => acc.push tag.trimAscii.copy
+    | _ => acc
 
 /-- Whether a pinned `rev` looks like a Lean version tag, e.g. `v4.32.0` or `v4.33.0-rc1`.
 
@@ -118,6 +126,44 @@ def isLeanVersionTag (rev : String) : Bool :=
 #guard isLeanVersionTag "main" == false
 
 #guard isLeanVersionTag "v1" == false
+
+/-- Whether a Lean version tag names a pre-release, e.g. `v4.33.0-rc1`. -/
+def isPrereleaseTag (tag : String) : Bool :=
+  tag.contains '-'
+
+/-- The newest Lean version tag in `tags` that does not exceed `target`.
+
+Lean ships patch releases that most of the ecosystem never tags: there is no `batteries`
+`v4.33.1`, because `v4.33.0` is still the right batteries for a `v4.33.1` toolchain. Holding
+such a dependency at its old pin would strand it releases behind, so it moves as far as it can
+instead — which is the pairing a maintainer picks by hand.
+
+A stable target never falls back onto a pre-release: pinning a dependency to an rc underneath a
+stable toolchain is worse than leaving it where it is. A pre-release target may, since there is
+nothing more stable to prefer at that version. -/
+public def pickNewestNotExceeding (tags : Array String) (target : String) : Option String :=
+    Id.run do
+  let some targetVer := (parseLeanTagVersion target).toOption
+    | return none
+  let allowPrerelease := isPrereleaseTag target
+  let mut best : Option (String × Lake.StdVer) := none
+  for tag in tags do
+    unless isLeanVersionTag tag do
+      continue
+    if isPrereleaseTag tag && !allowPrerelease then
+      continue
+    let some ver := (parseLeanTagVersion tag).toOption
+      | continue
+    if targetVer < ver then
+      continue
+    match best with
+    | some (_, bestVer) => if bestVer < ver then best := some (tag, ver)
+    | none => best := some (tag, ver)
+  return best.map Prod.fst
+
+-- Cases live in `Test.PinnedTagFallback` rather than in `#guard`s here: evaluating them means
+-- calling `parseLeanTagVersion` across a module boundary, which the elaborator resolves to a
+-- native symbol it has not loaded.
 
 /-- Whether a require block is managed by the `PINNED_DEPS` input.
 
@@ -254,22 +300,35 @@ def bumpPackage (pinnedDeps : PinnedDeps) (target : String) (targetDir : FilePat
         IO.println <| log% s!"Not managing {name}: {reason}."
 
   -- The toolchain is the thing being updated, so it always moves to the target. Each managed
-  -- dependency moves with it when its remote has the target tag; one that lags keeps its pin
-  -- and is reported, and post-update validation decides whether the mixture still builds.
-  -- Comparing per file also lets a dependency that tagged the release late catch up on a rerun
-  -- after the toolchain has already moved.
+  -- dependency moves with it when its remote has the target tag, and otherwise as far towards it
+  -- as that remote allows; only one with nothing at or below the target keeps its pin, and
+  -- post-update validation decides whether the mixture still builds. Comparing per file also
+  -- lets a dependency that tagged the release late catch up on a rerun after the toolchain has
+  -- already moved.
   let mut newLines := lines
   let mut bumped : Array String := #[]
   for b in managed do
     if b.rev == some target then
       continue
     if let (some url, some idx) := (b.git, b.revLine) then
-      if ← remoteHasTag url target then
-        newLines := newLines.set! idx (setRevLine newLines[idx]! target)
-        bumped := bumped.push (b.name.getD url)
-      else
+      let who := b.name.getD url
+      let tags ← remoteTags url
+      let choice :=
+        if tags.contains target then some target else pickNewestNotExceeding tags target
+      match choice with
+      | some tag =>
+        if b.rev == some tag then
+          IO.println <| log%
+            s!"{who} has no {target} tag; its pin is already at {tag}, the newest below it."
+        else
+          newLines := newLines.set! idx (setRevLine newLines[idx]! tag)
+          bumped := bumped.push who
+          unless tag == target do
+            IO.println <| log%
+              s!"{who} has no {target} tag; pinning it to {tag}, the newest below it."
+      | none =>
         IO.println <| log%
-          s!"{b.name.getD url} has no {target} tag yet; leaving its pin at {b.rev.getD "?"}."
+          s!"{who} has no {target} tag nor any earlier one; leaving its pin at {b.rev.getD "?"}."
 
   let toolchainBumped := s!"leanprover/lean4:{target}" != currentToolchain
   if !toolchainBumped && bumped.isEmpty then
@@ -301,10 +360,12 @@ it.
 
 The toolchain bump is never gated on the dependencies: updating the toolchain is the point of
 this action. A managed dependency whose remote has the target tag is bumped in lockstep and its
-manifest entry refreshed; one that has not tagged the release yet keeps its pin and is
-reported, and post-update validation decides whether the mixture still builds. Because each
-file is compared to the target individually, a dependency that tags the release late catches up
-on a rerun after the toolchain has already moved.
+manifest entry refreshed. One that never tagged the release — Lean ships patch releases that
+most of the ecosystem skips — moves instead to the newest tag it does publish below the target,
+the pairing a maintainer would pick by hand. Only a dependency with nothing at or below the
+target keeps its pin and is reported, and post-update validation decides whether the mixture
+still builds. Because each file is compared to the target individually, a dependency that tags
+the release late catches up on a rerun after the toolchain has already moved.
 
 Managed dependencies are the names listed in `PinnedDeps`, or, when that list is empty, every
 git `require` in the lakefile pinned to a Lean version tag. A dependency pinned to a commit hash

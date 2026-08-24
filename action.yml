@@ -11,9 +11,12 @@ inputs:
       The directory containing the Lake package to update, relative to the workspace.
       Accepts a comma- or space-separated list of directories, and an entry ending in `/*`
       expands to every immediate subdirectory containing a lakefile, so a repository of sibling
-      packages can be updated in one invocation (e.g. `templates/*`). With multiple directories
-      the outputs aggregate: an update or failure in any directory reports as such, and the
-      Mathlib cache prefetch (which understands a single directory) is skipped.
+      packages can be updated in one invocation (e.g. `templates/*`). An entry ending in `/**`
+      expands the same way but walks the whole tree, reaching a package nested inside another
+      package — a fixture workspace that its parent requires by path, say. Both forms skip
+      dotted directories, so the dependency checkouts under `.lake` are never swept up. With
+      multiple directories the outputs aggregate: an update or failure in any directory reports
+      as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
       This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
     required: false
     default: "."
@@ -59,9 +62,11 @@ inputs:
         * `lake-update`: run `lake update` to advance dependencies (the upstream behavior).
         * `pinned-tags`: bump `lean-toolchain` to the latest Lean version tag, moving the pinned
           `rev` of managed git dependencies with it. A dependency that has not tagged that version
-          yet keeps its pin and is reported; post-update validation decides whether the result
-          builds. Use this when dependencies are pinned to Lean-version tags (e.g. `v4.31.0`)
-          rather than tracking a branch.
+          — Lean ships patch releases most of the ecosystem skips, so there is no `batteries`
+          `v4.33.1` — moves to the newest tag it does publish below the target instead. Only one
+          with nothing at or below the target keeps its pin and is reported; post-update
+          validation decides whether the result builds. Use this when dependencies are pinned to
+          Lean-version tags (e.g. `v4.31.0`) rather than tracking a branch.
       Default: `lake-update`
     required: false
     default: "lake-update"

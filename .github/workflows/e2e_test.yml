@@ -177,7 +177,10 @@ jobs:
           on_update_fails: "silent"
           lake_package_directory: "./Fixtures/PinnedTags"
 
-      - name: The toolchain and the pinned dependency must move together
+      # batteries does not tag every Lean patch release — there is no batteries v4.33.1 — so the
+      # pin is expected to land on the newest stable batteries tag that does not exceed the
+      # toolchain, which equals the toolchain only when batteries tagged that release.
+      - name: The pinned dependency must move as close to the toolchain as its tags allow
         run: |
           toolchain=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
           pin=$(grep -o '@ "[^"]*"' Fixtures/PinnedTags/lakefile.lean | cut -d'"' -f2)
@@ -186,15 +189,27 @@ jobs:
             echo "Error: lean-toolchain was not bumped"
             exit 1
           fi
-          if [ "$toolchain" != "$pin" ]; then
-            echo "Error: dependency pinned to $pin but toolchain is $toolchain"
+          tags=$(git ls-remote --tags --refs \
+            https://github.com/leanprover-community/batteries \
+            | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$')
+          if printf '%s\n' "$tags" | grep -qx "$toolchain"; then
+            expected="$toolchain"
+          else
+            expected=$(printf '%s\n%s\n' "$tags" "$toolchain" \
+              | sort -V \
+              | awk -v t="$toolchain" '$0 == t { exit } { last = $0 } END { print last }')
+          fi
+          echo "expected=$expected"
+          if [ "$pin" != "$expected" ]; then
+            echo "Error: pinned to $pin, but $expected is the newest batteries tag <= $toolchain"
             exit 1
           fi
 
       - name: The manifest must be refreshed to match the new pin
         run: |
-          if ! grep -q "\"inputRev\": \"$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)\"" \
-            Fixtures/PinnedTags/lake-manifest.json; then
+          pin=$(grep -o '@ "[^"]*"' Fixtures/PinnedTags/lakefile.lean | cut -d'"' -f2)
+          if ! grep -q "\"inputRev\": \"$pin\"" Fixtures/PinnedTags/lake-manifest.json; then
             echo "Error: lake-manifest.json still points at the old revision"
             cat Fixtures/PinnedTags/lake-manifest.json
             exit 1
