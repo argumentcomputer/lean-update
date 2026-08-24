@@ -11,6 +11,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      # Mint a token from the GitHub App so the opened PR triggers CI. A PR opened with the
+      # default GITHUB_TOKEN does not start workflow runs — GitHub's guard against a workflow
+      # triggering itself — so those runs sit waiting for a maintainer to release them by hand.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+
       - name: Update Lean package
         id: update
         uses: ./
+        with:
+          token: ${{ steps.app-token.outputs.token }}
