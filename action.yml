@@ -11,9 +11,12 @@ inputs:
       The directory containing the Lake package to update, relative to the workspace.
       Accepts a comma- or space-separated list of directories, and an entry ending in `/*`
       expands to every immediate subdirectory containing a lakefile, so a repository of sibling
-      packages can be updated in one invocation (e.g. `templates/*`). With multiple directories
-      the outputs aggregate: an update or failure in any directory reports as such, and the
-      Mathlib cache prefetch (which understands a single directory) is skipped.
+      packages can be updated in one invocation (e.g. `templates/*`). An entry ending in `/**`
+      expands the same way but walks the whole tree, reaching a package nested inside another
+      package — a fixture workspace that its parent requires by path, say. Both forms skip
+      dotted directories, so the dependency checkouts under `.lake` are never swept up. With
+      multiple directories the outputs aggregate: an update or failure in any directory reports
+      as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
       This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
     required: false
     default: "."

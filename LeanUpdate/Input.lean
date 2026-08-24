@@ -84,12 +84,34 @@ public def getTargetLakePackageDirectory : IO FilePath := do
   let workspace? := (← IO.getEnv "GITHUB_WORKSPACE").map FilePath.mk
   pure <| resolveLakePackageDir workspace? packageDir
 
+/-- whether `dir` is itself a Lake package root -/
+def hasLakefile (dir : FilePath) : IO Bool := do
+  if (← (dir / "lakefile.toml").pathExists) then return true
+  (dir / "lakefile.lean").pathExists
+
+/-- Every descendant of `root` that is a Lake package root, in directory order.
+
+Dotted directories are pruned. `.lake` holds the dependency checkouts of an already-configured
+package, each a package root in its own right, so descending into one would update vendored
+copies of other people's packages instead of the repository's own. -/
+partial def lakePackagesUnder (root : FilePath) : IO (Array FilePath) := do
+  let mut found : Array FilePath := #[]
+  for child in (← root.readDir) do
+    if !(← child.path.isDir) then continue
+    if child.fileName.startsWith "." then continue
+    if (← hasLakefile child.path) then
+      found := found.push child.path
+    found := found ++ (← lakePackagesUnder child.path)
+  return found
+
 /-- Resolve the target Lake package directories supplied by the action input.
 
 The input is a comma- or whitespace-separated list of paths, each resolved relative to the
-GitHub workspace. An entry ending in `/*` expands to the subdirectories of its parent that
-contain a lakefile, sorted by name, so a repository of sibling packages can be updated in one
-invocation (e.g. `templates/*`). -/
+GitHub workspace. An entry ending in `/*` expands to the immediate subdirectories of its parent
+that contain a lakefile, so a repository of sibling packages can be updated in one invocation
+(e.g. `templates/*`). An entry ending in `/**` expands the same way but walks the whole tree, so
+it also reaches a package nested inside another package (e.g. a fixture workspace required by
+path from its parent). Both forms sort by path and skip dotted directories such as `.lake`. -/
 public def getTargetLakePackageDirectories : IO (Array FilePath) := do
   let packageDir ← GitHub.Action.Input.get LakePackageDirectory
   let workspace? := (← IO.getEnv "GITHUB_WORKSPACE").map FilePath.mk
@@ -99,14 +121,18 @@ public def getTargetLakePackageDirectories : IO (Array FilePath) := do
     |>.filter (fun s => !s.isEmpty)
   let mut dirs : Array FilePath := #[]
   for entry in entries do
-    if entry.endsWith "/*" then
+    if entry.endsWith "/**" then
+      let parent := resolveLakePackageDir workspace? (FilePath.mk (entry.dropEnd 3).copy)
+      let found ← lakePackagesUnder parent
+      dirs := dirs ++ found.qsort (fun a b => a.toString < b.toString)
+    else if entry.endsWith "/*" then
       let parent := resolveLakePackageDir workspace? (FilePath.mk (entry.dropEnd 2).copy)
       let mut found : Array FilePath := #[]
       for child in (← parent.readDir) do
-        if (← child.path.isDir) then
-          if (← (child.path / "lakefile.toml").pathExists)
-              || (← (child.path / "lakefile.lean").pathExists) then
-            found := found.push child.path
+        if !(← child.path.isDir) then continue
+        if child.fileName.startsWith "." then continue
+        if (← hasLakefile child.path) then
+          found := found.push child.path
       dirs := dirs ++ found.qsort (fun a b => a.toString < b.toString)
     else
       dirs := dirs.push (resolveLakePackageDir workspace? (FilePath.mk entry))
