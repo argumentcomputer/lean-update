@@ -331,3 +331,38 @@ jobs:
       - name: This update should succeed
         if: steps.update.outputs.result != 'update-success'
         run: exit 1
+
+  # An exclusion carves a package back out of the set the action would otherwise
+  # update, leaving its lean-toolchain untouched.
+  excluded_directory_e2e_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Bump two packages, excluding one of them
+        id: update
+        uses: ./
+        with:
+          bump_mode: "pinned-tags"
+          on_update_succeeds: "silent"
+          on_update_fails: "silent"
+          lake_package_directory: "./Fixtures/PinnedTags ./Fixtures/SmokeSuccess !./Fixtures/SmokeSuccess"
+
+      - name: The excluded package must be left alone
+        run: |
+          a=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
+          b=$(cut -d: -f2 Fixtures/SmokeSuccess/lean-toolchain)
+          echo "PinnedTags=$a SmokeSuccess=$b"
+          if [ "$a" = "v4.31.0" ]; then
+            echo "Error: the included package was not bumped"
+            exit 1
+          fi
+          if [ "$b" != "v4.16.0" ]; then
+            echo "Error: the excluded package was bumped to $b"
+            exit 1
+          fi
+
+      - name: This update should succeed
+        if: steps.update.outputs.result != 'update-success'
+        run: exit 1

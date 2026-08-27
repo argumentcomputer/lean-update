@@ -16,6 +16,8 @@ public def main (args : List String) : IO Unit := do
   | ["toolchain-resolution-inner"] => LeanUpdateTest.LakeToolchainResolution.testInner
   | ["package-glob-recursive"] => LeanUpdateTest.PackageDirectoryGlob.runRecursive
   | ["package-glob-shallow"] => LeanUpdateTest.PackageDirectoryGlob.runShallow
+  | ["package-glob-exclude-subtree"] => LeanUpdateTest.PackageDirectoryGlob.runExcludeSubtree
+  | ["package-glob-exclude-nested"] => LeanUpdateTest.PackageDirectoryGlob.runExcludeNested
   | _ => do
     LeanUpdateTest.PinnedTagFallback.test
     LeanUpdateTest.PackageDirectoryGlob.test

@@ -14,8 +14,12 @@ inputs:
       packages can be updated in one invocation (e.g. `templates/*`). An entry ending in `/**`
       expands the same way but walks the whole tree, reaching a package nested inside another
       package — a fixture workspace that its parent requires by path, say. Both forms skip
-      dotted directories, so the dependency checkouts under `.lake` are never swept up. With
-      multiple directories the outputs aggregate: an update or failure in any directory reports
+      dotted directories, so the dependency checkouts under `.lake` are never swept up. An entry
+      prefixed with `!` subtracts instead of adding: it names a directory and drops that directory
+      together with everything beneath it, so a broad `benchmarks/**` can still leave one package
+      alone (e.g. `benchmarks/** !benchmarks/pinned`). An exclusion carries no glob of its own,
+      since it already covers its whole subtree, and one matching nothing is reported in the log.
+      With multiple directories the outputs aggregate: an update or failure in any directory reports
       as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
       This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
     required: false
