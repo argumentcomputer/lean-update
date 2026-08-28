@@ -16,6 +16,11 @@ on:
       - dev
   workflow_dispatch:
 
+# The jobs only build and test fixtures inside the runner's own checkout; the `gh` calls
+# made by lean-action read the public Mathlib cache and the public list of Lean releases.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

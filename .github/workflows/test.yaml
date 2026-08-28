@@ -16,6 +16,11 @@ on:
       - dev
   workflow_dispatch:
 
+# Every job asserts on the action's outputs inside the runner's own checkout and never
+# writes back, so a read-only token is all they need.
+permissions:
+  contents: read
+
 jobs:
   has_dependency_output_test_true:
     runs-on: ubuntu-latest
