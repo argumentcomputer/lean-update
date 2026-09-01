@@ -33,6 +33,7 @@ jobs:
         uses: ./
         with:
           on_update_succeeds: "silent"
+          on_update_fails: "silent"
           lake_package_directory: "./Fixtures/HasDep"
 
       - name: The result should be success
@@ -49,6 +50,7 @@ jobs:
         uses: ./
         with:
           on_update_succeeds: "silent"
+          on_update_fails: "silent"
           lake_package_directory: "./Fixtures/SmokeSuccess"
       - name: The result should be no dependency
         if: steps.update.outputs.has_dependency != 'false'
@@ -65,6 +67,7 @@ jobs:
         uses: ./
         with:
           on_update_succeeds: "silent"
+          on_update_fails: "silent"
           lake_package_directory: "./Fixtures/SmokeSuccess"
 
       - name: output assertion of latest_lean
@@ -97,6 +100,7 @@ jobs:
         uses: ./
         with:
           on_update_succeeds: "silent"
+          on_update_fails: "silent"
           lake_package_directory: "./Fixtures/HasDep"
 
       - name: output assertion of latest_lean
@@ -123,6 +127,7 @@ jobs:
         uses: ./
         with:
           on_update_succeeds: "silent"
+          on_update_fails: "silent"
           lake_package_directory: "./Fixtures/SmokeSuccess"
           update_lean_toolchain: "never"
 
