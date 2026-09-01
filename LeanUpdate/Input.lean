@@ -193,6 +193,28 @@ public def getTargetLakePackageDirectories : IO (Array FilePath) := do
     throw <| IO.userError s!"No Lake package directories found for input '{raw}'"
   return kept
 
+/-- What to do when a target package's Mathlib cache cannot be fetched.
+
+Defaults to `require`: building Mathlib from source takes hours and usually ends in a timeout,
+so a run that silently falls back to it costs far more than the one that stops. -/
+public inductive MathlibCache where
+  /-- fail validation when `lake exe cache get` fails -/
+  | require
+  /-- report the failure and build without the cache -/
+  | optional
+deriving Repr, BEq, ToString, HasParser
+
+public instance : Input MathlibCache where
+  envName := "MATHLIB_CACHE"
+  parse := parseAs MathlibCache
+  localValue? := some .require
+
+#guard
+  let lst : List MathlibCache := [.require, .optional]
+  lst.map toString == ["require", "optional"]
+
+#guard (parseAs MathlibCache "optional").toOption == some .optional
+
 /-- The input whether to update the `lean-toolchain` file. -/
 public inductive UpdateLeanToolchain where
   | auto

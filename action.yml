@@ -102,6 +102,17 @@ inputs:
       Build arguments to pass to `lake build` during post-update validation.
     required: false
     default: "--log-level=warning"
+  mathlib_cache:
+    description: |
+      What to do when a target package depends on Mathlib and `lake exe cache get` fails.
+      Allowed values:
+        * `require`: fail validation, reporting the directory and the cache output (default)
+        * `optional`: report the failure and build without the cache
+      Building Mathlib from source takes hours and usually ends in a timeout, so falling back to
+      it silently costs far more than stopping does. Set `optional` when a slow build is
+      preferable to no answer at all.
+    required: false
+    default: "require"
   validate:
     description: |
       Whether to run post-update validation (`lake build`, and `lake test`/`lake lint` when
@@ -330,6 +341,7 @@ runs:
         lake exe leanUpdate validateUpdate
       env:
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -428,6 +440,7 @@ runs:
         # Could be best to use the default token here
         GH_TOKEN: ${{ inputs.token }}
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -452,6 +465,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}

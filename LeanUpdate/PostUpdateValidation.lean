@@ -98,26 +98,35 @@ def dependsOnMathlib (cwd : FilePath) : IO Bool := do
     return false
   return (← IO.FS.readFile manifest).contains "leanprover-community/mathlib4"
 
-/-- Download Mathlib's prebuilt artifacts for the package rooted at `cwd`, if it needs them.
+/-- Get Mathlib's prebuilt artifacts for the package rooted at `cwd`, if it needs them.
 
 Every Lake package root carries its own `.lake/packages/mathlib`, so the cache is unpacked once
 per package; the downloads behind it are pooled in a single per-user directory, so only the first
-package pays for the network. Failing to get the cache only means a slower build, so it is
-reported rather than raised.
+package pays for the network. Whether a failure stops the run is `MathlibCache`'s to decide.
 -/
-def getMathlibCache (cwd : FilePath) : IO Unit := do
+def getMathlibCache (cwd : FilePath) : IO (Except String Unit) := do
   unless ← dependsOnMathlib cwd do
-    return
+    return .ok ()
   IO.println <| log% s!"Getting the Mathlib cache for {cwd}"
   let out ← IO.Process.lakeOutput cwd (args := #["exe", "cache", "get"])
-  if out.exitCode != 0 then
+  if out.exitCode == 0 then
+    return .ok ()
+  let details := out.stdout.trimAscii.copy ++ "\n" ++ out.stderr.trimAscii.copy
+  match ← GitHub.Action.Input.get MathlibCache with
+  | .optional =>
     IO.println <| log%
       s!"warning: `lake exe cache get` exited with {out.exitCode}; building without the cache"
+    return .ok ()
+  | .require =>
+    return .error s!"`lake exe cache get` exited with {out.exitCode}\n{details}"
 
 /-- Run `lake build`, and `lake test`/`lake lint` when drivers exist, in one directory. -/
 def validatePackage (buildArgs : BuildArgs) (targetLakePackageDir : FilePath) :
     IO PostUpdateValidationResult := do
-  getMathlibCache targetLakePackageDir
+  match ← getMathlibCache targetLakePackageDir with
+  | .error e =>
+    return { buildResult := .error e, testResult? := none, lintResult? := none }
+  | .ok _ => pure ()
   let buildResult ← runLakeBuild targetLakePackageDir buildArgs
 
   let hasTestDriverResult ← hasTestDriver targetLakePackageDir
