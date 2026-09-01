@@ -19,6 +19,7 @@ inputs:
       together with everything beneath it, so a broad `benchmarks/**` can still leave one package
       alone (e.g. `benchmarks/** !benchmarks/pinned`). An exclusion carries no glob of its own,
       since it already covers its whole subtree, and one matching nothing is reported in the log.
+      Quote the value in YAML: a scalar that starts with `!` is otherwise read as a YAML tag.
       With multiple directories the outputs aggregate: an update or failure in any directory reports
       as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
       This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
@@ -165,7 +166,14 @@ inputs:
     default: "lake-manifest.json"
   token:
     description: |
-      A Github token to be used for committing
+      A Github token to be used for committing.
+
+      With the default `github.token`, opening a pull request also needs
+      `Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and
+      approve pull requests` enabled on the repository, and the PR it opens will not start any
+      workflow runs — GitHub's guard against a workflow triggering itself — so its checks sit
+      pending until someone pushes to the branch or reopens it. Pass a PAT or a GitHub App token
+      to avoid both.
     required: false
     default: ${{ github.token }}
 
