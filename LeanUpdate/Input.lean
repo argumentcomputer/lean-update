@@ -155,6 +155,10 @@ public def getTargetLakePackageDirectories : IO (Array FilePath) := do
   let (exclusions, entries) := (splitPackageDirEntries raw).partition (·.startsWith "!")
   let exclusions := exclusions.map (fun entry => (entry.drop 1).copy)
   for entry in exclusions do
+    if entry.isEmpty then
+      throw <| IO.userError <|
+        "A bare '!' names no directory to exclude. Write the path immediately after it, " ++
+        "as in '!benchmarks/pinned'."
     if entry.any (· == '*') then
       throw <| IO.userError <|
         s!"Exclusion '!{entry}' contains a glob. An exclusion names a directory and already " ++

@@ -123,6 +123,9 @@ public def test : IO Unit := do
       "package-glob-recursive"
     checkContains unmatched "matched none" "an exclusion matching no package directory"
 
+    let bare ← runExpectingFailure tempDir "Benchmarks/** !" "package-glob-recursive"
+    checkContains bare "names no directory" "a bare exclusion marker"
+
     let globbed ← runExpectingFailure tempDir "Benchmarks/** !Benchmarks/**"
       "package-glob-recursive"
     checkContains globbed "contains a glob" "a globbed exclusion"
