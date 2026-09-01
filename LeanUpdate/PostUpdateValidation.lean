@@ -91,9 +91,33 @@ public def PostUpdateValidationResult.isSuccess (result : PostUpdateValidationRe
 public def PostUpdateValidationResult.isFailure (result : PostUpdateValidationResult) : Bool :=
   !result.isSuccess
 
+/-- Whether the package rooted at `cwd` depends on Mathlib. -/
+def dependsOnMathlib (cwd : FilePath) : IO Bool := do
+  let manifest := cwd / "lake-manifest.json"
+  if !(← manifest.pathExists) then
+    return false
+  return (← IO.FS.readFile manifest).contains "leanprover-community/mathlib4"
+
+/-- Download Mathlib's prebuilt artifacts for the package rooted at `cwd`, if it needs them.
+
+Every Lake package root carries its own `.lake/packages/mathlib`, so the cache is unpacked once
+per package; the downloads behind it are pooled in a single per-user directory, so only the first
+package pays for the network. Failing to get the cache only means a slower build, so it is
+reported rather than raised.
+-/
+def getMathlibCache (cwd : FilePath) : IO Unit := do
+  unless ← dependsOnMathlib cwd do
+    return
+  IO.println <| log% s!"Getting the Mathlib cache for {cwd}"
+  let out ← IO.Process.lakeOutput cwd (args := #["exe", "cache", "get"])
+  if out.exitCode != 0 then
+    IO.println <| log%
+      s!"warning: `lake exe cache get` exited with {out.exitCode}; building without the cache"
+
 /-- Run `lake build`, and `lake test`/`lake lint` when drivers exist, in one directory. -/
 def validatePackage (buildArgs : BuildArgs) (targetLakePackageDir : FilePath) :
     IO PostUpdateValidationResult := do
+  getMathlibCache targetLakePackageDir
   let buildResult ← runLakeBuild targetLakePackageDir buildArgs
 
   let hasTestDriverResult ← hasTestDriver targetLakePackageDir

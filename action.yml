@@ -20,9 +20,8 @@ inputs:
       alone (e.g. `benchmarks/** !benchmarks/pinned`). An exclusion carries no glob of its own,
       since it already covers its whole subtree, and one matching nothing is reported in the log.
       Quote the value in YAML: a scalar that starts with `!` is otherwise read as a YAML tag.
-      With multiple directories the outputs aggregate: an update or failure in any directory reports
-      as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
-      This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
+      With multiple directories the outputs aggregate: an update or failure in any directory
+      reports as such, and each directory gets the Mathlib cache if its own manifest needs it.
     required: false
     default: "."
 
@@ -321,21 +320,6 @@ runs:
         VALIDATE: ${{ inputs.validate }}
         ON_SUCCESS: ${{ steps.outcomes.outputs.on-success }}
         ON_FAILURE: ${{ steps.outcomes.outputs.on-failure }}
-
-    - name: Prepare Lean and get Mathlib cache
-      if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
-      id: prepare-lean
-      continue-on-error: true
-      uses: leanprover/lean-action@v1
-      with:
-        auto-config: "false"
-        build: "false"
-        test: "false"
-        lint: "false"
-        use-github-cache: "false"
-        lake-package-directory: ${{ inputs.lake_package_directory }}
-      env:
-        GH_TOKEN: ${{ github.token }}
 
     - name: Validate updated Lean package
       if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
