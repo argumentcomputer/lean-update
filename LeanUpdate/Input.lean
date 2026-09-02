@@ -104,6 +104,37 @@ partial def lakePackagesUnder (root : FilePath) : IO (Array FilePath) := do
     found := found ++ (← lakePackagesUnder child.path)
   return found
 
+/-- Split a directory-list action input into its entries.
+
+Separators are commas and ASCII whitespace, so `a, b`, `a b`, and a YAML block scalar holding one
+path per line all parse alike. -/
+def splitPackageDirEntries (raw : String) : List String :=
+  raw.split (fun c => c == ',' || c.isWhitespace)
+    |>.map (fun s => s.trimAscii.copy)
+    |>.filter (fun s => !s.isEmpty)
+    |>.toList
+
+#guard
+  splitPackageDirEntries " Benchmarks/**,\n  !Fixtures/Slow " == ["Benchmarks/**", "!Fixtures/Slow"]
+
+/-- The significant components of `path`, dropping empty and `.` segments. -/
+def pathComponents (path : FilePath) : List String :=
+  path.components.filter (fun s => !s.isEmpty && s != ".")
+
+/-- whether `dir` is `parent` itself or lies somewhere beneath it
+
+Comparing whole components rather than string prefixes keeps `Benchmarks/Slow`, `Benchmarks/Slow/`
+and `./Benchmarks/Slow` the same directory, while refusing to read `Benchmarks/SlowFixture` as
+living under `Benchmarks/Slow`. -/
+def isAtOrUnder (parent dir : FilePath) : Bool :=
+  (pathComponents parent).isPrefixOf (pathComponents dir)
+
+#guard isAtOrUnder "/w/Benchmarks/Slow" "/w/Benchmarks/Slow"
+#guard isAtOrUnder "/w/Benchmarks/Slow/" "/w/Benchmarks/Slow/Nested"
+#guard isAtOrUnder "./Benchmarks/Slow" "Benchmarks/Slow"
+#guard !isAtOrUnder "/w/Benchmarks/Slow" "/w/Benchmarks/SlowFixture"
+#guard !isAtOrUnder "/w/Benchmarks/Slow" "/w/Benchmarks"
+
 /-- Resolve the target Lake package directories supplied by the action input.
 
 The input is a comma- or whitespace-separated list of paths, each resolved relative to the
@@ -111,14 +142,27 @@ GitHub workspace. An entry ending in `/*` expands to the immediate subdirectorie
 that contain a lakefile, so a repository of sibling packages can be updated in one invocation
 (e.g. `templates/*`). An entry ending in `/**` expands the same way but walks the whole tree, so
 it also reaches a package nested inside another package (e.g. a fixture workspace required by
-path from its parent). Both forms sort by path and skip dotted directories such as `.lake`. -/
+path from its parent). Both forms sort by path and skip dotted directories such as `.lake`.
+
+An entry prefixed with `!` subtracts instead of adding: it names a directory and drops that
+directory together with everything beneath it, which is what lets a broad `/**` cover a tree that
+holds a package the update must leave alone. An exclusion carries no glob of its own, since it
+already reaches the whole subtree. -/
 public def getTargetLakePackageDirectories : IO (Array FilePath) := do
   let packageDir ← GitHub.Action.Input.get LakePackageDirectory
   let workspace? := (← IO.getEnv "GITHUB_WORKSPACE").map FilePath.mk
   let raw := packageDir.val.toString
-  let entries := raw.split (fun c => c == ',' || c == ' ' || c == '\n')
-    |>.map (fun s => s.trimAscii.copy)
-    |>.filter (fun s => !s.isEmpty)
+  let (exclusions, entries) := (splitPackageDirEntries raw).partition (·.startsWith "!")
+  let exclusions := exclusions.map (fun entry => (entry.drop 1).copy)
+  for entry in exclusions do
+    if entry.isEmpty then
+      throw <| IO.userError <|
+        "A bare '!' names no directory to exclude. Write the path immediately after it, " ++
+        "as in '!benchmarks/pinned'."
+    if entry.any (· == '*') then
+      throw <| IO.userError <|
+        s!"Exclusion '!{entry}' contains a glob. An exclusion names a directory and already " ++
+        "covers everything beneath it."
   let mut dirs : Array FilePath := #[]
   for entry in entries do
     if entry.endsWith "/**" then
@@ -136,9 +180,40 @@ public def getTargetLakePackageDirectories : IO (Array FilePath) := do
       dirs := dirs ++ found.qsort (fun a b => a.toString < b.toString)
     else
       dirs := dirs.push (resolveLakePackageDir workspace? (FilePath.mk entry))
-  if dirs.isEmpty then
+  let excludedDirs := exclusions.map (fun entry =>
+    resolveLakePackageDir workspace? (FilePath.mk entry))
+  -- An exclusion matching nothing is far more likely a typo than a deliberate no-op, and the
+  -- cost of the typo is that a package meant to be protected is updated instead.
+  for (entry, excludedDir) in exclusions.zip excludedDirs do
+    unless dirs.any (isAtOrUnder excludedDir ·) do
+      IO.println <| log%
+        s!"warning: exclusion '!{entry}' matched none of the target Lake package directories"
+  let kept := dirs.filter (fun dir => !excludedDirs.any (isAtOrUnder · dir))
+  if kept.isEmpty then
     throw <| IO.userError s!"No Lake package directories found for input '{raw}'"
-  return dirs
+  return kept
+
+/-- What to do when a target package's Mathlib cache cannot be fetched.
+
+Defaults to `require`: building Mathlib from source takes hours and usually ends in a timeout,
+so a run that silently falls back to it costs far more than the one that stops. -/
+public inductive MathlibCache where
+  /-- fail validation when `lake exe cache get` fails -/
+  | require
+  /-- report the failure and build without the cache -/
+  | optional
+deriving Repr, BEq, ToString, HasParser
+
+public instance : Input MathlibCache where
+  envName := "MATHLIB_CACHE"
+  parse := parseAs MathlibCache
+  localValue? := some .require
+
+#guard
+  let lst : List MathlibCache := [.require, .optional]
+  lst.map toString == ["require", "optional"]
+
+#guard (parseAs MathlibCache "optional").toOption == some .optional
 
 /-- The input whether to update the `lean-toolchain` file. -/
 public inductive UpdateLeanToolchain where

@@ -14,10 +14,14 @@ inputs:
       packages can be updated in one invocation (e.g. `templates/*`). An entry ending in `/**`
       expands the same way but walks the whole tree, reaching a package nested inside another
       package — a fixture workspace that its parent requires by path, say. Both forms skip
-      dotted directories, so the dependency checkouts under `.lake` are never swept up. With
-      multiple directories the outputs aggregate: an update or failure in any directory reports
-      as such, and the Mathlib cache prefetch (which understands a single directory) is skipped.
-      This parameter is passed to the lake-package-directory argument of leanprover/lean-action.
+      dotted directories, so the dependency checkouts under `.lake` are never swept up. An entry
+      prefixed with `!` subtracts instead of adding: it names a directory and drops that directory
+      together with everything beneath it, so a broad `benchmarks/**` can still leave one package
+      alone (e.g. `benchmarks/** !benchmarks/pinned`). An exclusion carries no glob of its own,
+      since it already covers its whole subtree, and one matching nothing is reported in the log.
+      Quote the value in YAML: a scalar that starts with `!` is otherwise read as a YAML tag.
+      With multiple directories the outputs aggregate: an update or failure in any directory
+      reports as such, and each directory gets the Mathlib cache if its own manifest needs it.
     required: false
     default: "."
 
@@ -98,6 +102,17 @@ inputs:
       Build arguments to pass to `lake build` during post-update validation.
     required: false
     default: "--log-level=warning"
+  mathlib_cache:
+    description: |
+      What to do when a target package depends on Mathlib and `lake exe cache get` fails.
+      Allowed values:
+        * `require`: fail validation, reporting the directory and the cache output (default)
+        * `optional`: report the failure and build without the cache
+      Building Mathlib from source takes hours and usually ends in a timeout, so falling back to
+      it silently costs far more than stopping does. Set `optional` when a slow build is
+      preferable to no answer at all.
+    required: false
+    default: "require"
   validate:
     description: |
       Whether to run post-update validation (`lake build`, and `lake test`/`lake lint` when
@@ -161,7 +176,14 @@ inputs:
     default: "lake-manifest.json"
   token:
     description: |
-      A Github token to be used for committing
+      A Github token to be used for committing.
+
+      With the default `github.token`, opening a pull request also needs
+      `Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and
+      approve pull requests` enabled on the repository, and the PR it opens will not start any
+      workflow runs — GitHub's guard against a workflow triggering itself — so its checks sit
+      pending until someone pushes to the branch or reopens it. Pass a PAT or a GitHub App token
+      to avoid both.
     required: false
     default: ${{ github.token }}
 
@@ -310,21 +332,6 @@ runs:
         ON_SUCCESS: ${{ steps.outcomes.outputs.on-success }}
         ON_FAILURE: ${{ steps.outcomes.outputs.on-failure }}
 
-    - name: Prepare Lean and get Mathlib cache
-      if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
-      id: prepare-lean
-      continue-on-error: true
-      uses: leanprover/lean-action@v1
-      with:
-        auto-config: "false"
-        build: "false"
-        test: "false"
-        lint: "false"
-        use-github-cache: "false"
-        lake-package-directory: ${{ inputs.lake_package_directory }}
-      env:
-        GH_TOKEN: ${{ github.token }}
-
     - name: Validate updated Lean package
       if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
       id: validate-update
@@ -334,6 +341,7 @@ runs:
         lake exe leanUpdate validateUpdate
       env:
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -432,6 +440,7 @@ runs:
         # Could be best to use the default token here
         GH_TOKEN: ${{ inputs.token }}
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}
@@ -456,6 +465,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         BUILD_ARGS: ${{ inputs.build_args }}
+        MATHLIB_CACHE: ${{ inputs.mathlib_cache }}
         LAKE_PACKAGE_DIRECTORY: ${{ inputs.lake_package_directory }}
       shell: bash
       working-directory: ${{ github.action_path }}

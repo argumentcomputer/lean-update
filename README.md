@@ -20,7 +20,9 @@ on:
 
 jobs:
   update_lean:
-    # this is needed for private repositories
+    # The default GITHUB_TOKEN is read-only, so the write scopes have to be asked for.
+    # Opening the pull request also needs `Allow GitHub Actions to create and approve pull
+    # requests` under Settings > Actions > General > Workflow permissions.
     permissions:
       contents: write
       pull-requests: write
@@ -49,7 +51,9 @@ on:
 
 jobs:
   update_lean:
-    # this is needed for private repositories
+    # The default GITHUB_TOKEN is read-only, so the write scopes have to be asked for.
+    # Opening the pull request also needs `Allow GitHub Actions to create and approve pull
+    # requests` under Settings > Actions > General > Workflow permissions.
     permissions:
       contents: write
       pull-requests: write
@@ -81,7 +85,9 @@ on:
 
 jobs:
   update_lean:
-    # this is needed for private repositories
+    # The default GITHUB_TOKEN is read-only, so the write scopes have to be asked for.
+    # Opening the pull request also needs `Allow GitHub Actions to create and approve pull
+    # requests` under Settings > Actions > General > Workflow permissions.
     permissions:
       contents: write
       pull-requests: write
