@@ -85,6 +85,17 @@ inputs:
     required: false
     default: ""
 
+  update_lean4_nix:
+    description: |
+      When `true`, check argumentcomputer/lean4-nix's default branch for the latest Lean
+      release before publishing an update. If it is missing, skip validation and notifications
+      and report `update-deferred`; the next scheduled run retries. Otherwise run
+      `nix flake update lean4-nix`, including flake.lock in the same PR.
+      Requires Nix 2.19 or newer installed by the caller, and a root flake with
+      `inputs.lean4-nix.url = "github:argumentcomputer/lean4-nix"`.
+    required: false
+    default: "false"
+
   # ----------------------------------------- #
   # run `lake update` and run build/test/lint #
   # ----------------------------------------- #
@@ -194,13 +205,14 @@ outputs:
     value: ${{ steps.find-dependencies.outputs.has_dependency }}
   result:
     description: |
-      The action outputs `no-update`, `update-success` or `update-fail` depending on the three possible scenarios.
+      The action reports whether an update was available, validated or deferred.
 
       Description of each value:
         * `no-update`: No update was available.
         * `update-success`: An update was available and post-update validation was successful.
         * `update-fail`: An update was available but post-update validation failed.
         * `update-unvalidated`: An update was available and validation was skipped (see `validate`).
+        * `update-deferred`: An update is waiting for lean4-nix to publish the latest release.
     value: ${{ steps.record-result.outputs.outcome }}
   latest_lean:
     description: |
@@ -219,7 +231,7 @@ outputs:
       Returns `true` in the following cases:
         * When updates are available and post-update validation succeeds. However, if `update_if_modified` is set to `lean-toolchain`, this is only true when the Lean version has been updated.
         * When updates are available and post-update validation fails.
-      Returns `false` in all other cases.
+      Returns `false` in all other cases, including an update deferred for lean4-nix.
     value: ${{ steps.record-notify.outputs.notify }}
 
 runs:
@@ -311,6 +323,24 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
 
+    - name: Update lean4-nix and wait for toolchain support
+      if: inputs.update_lean4_nix == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
+      id: update-lean4-nix
+      run: |
+        releases=$(gh api repos/argumentcomputer/lean4-nix/contents/data/toolchains.json \
+          -H 'Accept: application/vnd.github.raw+json')
+        ready=$(jq -r --arg tag "$LEAN_UPDATE_LATEST_LEAN" 'has($tag)' <<< "$releases")
+        echo "ready=$ready" >> "$GITHUB_OUTPUT"
+        if [ "$ready" != "true" ]; then
+          echo "Waiting for lean4-nix to support $LEAN_UPDATE_LATEST_LEAN; skipping this update"
+          exit 0
+        fi
+        nix flake update lean4-nix --refresh
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GH_TOKEN: ${{ github.token }}
+
     - name: Decide whether to validate
       id: validation-mode
       run: |
@@ -333,7 +363,8 @@ runs:
         ON_FAILURE: ${{ steps.outcomes.outputs.on-failure }}
 
     - name: Validate updated Lean package
-      if: steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
+      if: steps.update-lean4-nix.outputs.ready != 'false' &&
+          steps.validation-mode.outputs.run == 'true' && env.LEAN_UPDATE_FILES_CHANGED == 'true'
       id: validate-update
       continue-on-error: true
       run: |
@@ -353,7 +384,10 @@ runs:
       id: record-result
       run: |
         : Record the outcome
-        if [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
+        if [ "${{ steps.update-lean4-nix.outputs.ready }}" == "false" ]; then
+          echo "Update is waiting for lean4-nix"
+          echo "outcome=update-deferred" >> $GITHUB_OUTPUT
+        elif [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
           echo "No update available"
           echo "outcome=no-update" >> $GITHUB_OUTPUT
         elif [ "${{ steps.validate-update.outcome }}" == "success" ]; then
@@ -372,7 +406,10 @@ runs:
       id: record-notify
       run: |
         : Record the notify status
-        if [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
+        if [ "${{ steps.update-lean4-nix.outputs.ready }}" == "false" ]; then
+          echo "Update deferred until lean4-nix is ready"
+          echo "notify=false" >> $GITHUB_OUTPUT
+        elif [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
           echo "No updates available, no need to notify"
           echo "notify=false" >> $GITHUB_OUTPUT
         elif [ "${{ steps.validate-update.outcome }}" == "success" ] && [ "${{ env.LEAN_UPDATE_DO_UPDATE }}" == "true" ]; then
@@ -396,6 +433,7 @@ runs:
     # An open PR for this release is left untouched: it may carry review
     # fixes, and create-pull-request would force-push them away.
     - name: Check for an open update PR
+      if: steps.update-lean4-nix.outputs.ready != 'false'
       id: existing-pr
       run: |
         : Check for an open update PR

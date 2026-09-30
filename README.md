@@ -69,6 +69,30 @@ jobs:
           update_if_modified: lean-toolchain
 ```
 
+### If your project uses lean4-nix
+
+Install Nix before the action and set `update_lean4_nix: true`:
+
+```yml
+      - uses: cachix/install-nix-action@v31
+      - uses: argumentcomputer/lean-update@dev
+        with:
+          bump_mode: pinned-tags
+          pr: true
+          update_lean4_nix: true
+          token: ${{ steps.app-token.outputs.token }}
+```
+
+This expects a root flake with
+`inputs.lean4-nix.url = "github:argumentcomputer/lean4-nix"`. The action checks
+that repository's default branch for the latest Lean release. If it is missing,
+the run reports `update-deferred` and opens no PR. After the wrapper merges, the
+next scheduled run updates the `lean4-nix` input and includes `flake.lock` in the
+toolchain PR. Existing PRs remain untouched.
+
+The example uses a token from an earlier `actions/create-github-app-token` step
+so the bot's PR triggers CI automatically.
+
 ### If you want to receive notifications on Zulip when the update fails
 
 1. First, create a bot in Zulip and note its API key. Be careful not to create a new account - Zulip has a dedicated feature for "creating a bot".
