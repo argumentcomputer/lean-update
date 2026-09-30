@@ -42,11 +42,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1787593167,
-        "narHash": "sha256-TJ/Lq/p8sXXINpodMSjpotERiCoDfoJDuvBn+bVL9Y8=",
+        "lastModified": 1790783203,
+        "narHash": "sha256-28jGAOsp2jv05Uvs+RYG5RTcrvMywYI6qbnZvmGmSwE=",
         "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "e014934f9c2b634aea3be072c7b0e6053a5cb211",
+        "rev": "4e6f60f49dbd86001ce44c5f76be9f3187ec4335",
         "type": "github"
       },
       "original": {
