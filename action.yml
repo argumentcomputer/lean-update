@@ -444,8 +444,9 @@ runs:
 
     # One PR step for both outcomes: whether the update built is the PR's own
     # CI's job to report, not the title's.
+    # A skipped lookup has no output, which compares equal to zero in expressions.
     - name: Open a pull request
-      if: steps.existing-pr.outputs.open == '0' &&
+      if: steps.existing-pr.outcome == 'success' && steps.existing-pr.outputs.open == '0' &&
           ((steps.validate-update.outcome == 'success' &&
           steps.outcomes.outputs.on-success == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true') ||
