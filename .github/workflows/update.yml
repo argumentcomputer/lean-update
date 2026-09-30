@@ -2,15 +2,13 @@ name: self update
 
 on:
   schedule:
-    - cron: '0 0 * * *' # every day at midnight
+    - cron: '0 12 * * *'
+      timezone: America/New_York
   workflow_dispatch:
 
-# Opening the pull request needs write access to contents and pull requests, and the
-# default `on_update_fails: issue` needs to open an issue when the bump does not build.
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 jobs:
   update:
@@ -19,6 +17,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ github.token }}
+
       - name: Update Lean package
         id: update
         uses: ./
+        with:
+          pr: true
+          update_lean4_nix: true
+          token: ${{ github.token }}
