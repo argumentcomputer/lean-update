@@ -246,8 +246,8 @@ runs:
         succ="$ON_SUCCESS"
         fail="$ON_FAILURE"
         if [ "$PR" = "true" ]; then
-          succ=pr
-          fail=pr
+          succ="pr"
+          fail="pr"
         fi
         echo "on-success=$succ" | tee -a "$GITHUB_OUTPUT"
         echo "on-failure=$fail" | tee -a "$GITHUB_OUTPUT"
@@ -258,10 +258,11 @@ runs:
         ON_FAILURE: ${{ inputs.on_update_fails }}
 
     - name: Install elan
-      run: |
+      # The appended path is the runner's own home directory, not event data.
+      run: | # zizmor: ignore[github-env]
         : Install elan
         curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y
-        echo "$HOME/.elan/bin" >> $GITHUB_PATH
+        echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       shell: bash
 
     - name: read lake-manifest.json and find dependencies
@@ -382,48 +383,54 @@ runs:
     # -------------------------------- #
     - name: Record the outcome
       id: record-result
+      env:
+        LEAN4_NIX_READY: ${{ steps.update-lean4-nix.outputs.ready }}
+        VALIDATE_OUTCOME: ${{ steps.validate-update.outcome }}
       run: |
         : Record the outcome
-        if [ "${{ steps.update-lean4-nix.outputs.ready }}" == "false" ]; then
+        if [ "$LEAN4_NIX_READY" == "false" ]; then
           echo "Update is waiting for lean4-nix"
-          echo "outcome=update-deferred" >> $GITHUB_OUTPUT
-        elif [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
+          echo "outcome=update-deferred" >> "$GITHUB_OUTPUT"
+        elif [ "$LEAN_UPDATE_FILES_CHANGED" == "false" ]; then
           echo "No update available"
-          echo "outcome=no-update" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "success" ]; then
+          echo "outcome=no-update" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "success" ]; then
           echo "Update available and validation successful"
-          echo "outcome=update-success" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "failure" ]; then
+          echo "outcome=update-success" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "failure" ]; then
           echo "Update available but validation fails"
-          echo "outcome=update-fail" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "skipped" ]; then
+          echo "outcome=update-fail" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "skipped" ]; then
           echo "Update available; validation skipped"
-          echo "outcome=update-unvalidated" >> $GITHUB_OUTPUT
+          echo "outcome=update-unvalidated" >> "$GITHUB_OUTPUT"
         fi
       shell: bash
 
     - name: Record the notify status
       id: record-notify
+      env:
+        LEAN4_NIX_READY: ${{ steps.update-lean4-nix.outputs.ready }}
+        VALIDATE_OUTCOME: ${{ steps.validate-update.outcome }}
       run: |
         : Record the notify status
-        if [ "${{ steps.update-lean4-nix.outputs.ready }}" == "false" ]; then
+        if [ "$LEAN4_NIX_READY" == "false" ]; then
           echo "Update deferred until lean4-nix is ready"
-          echo "notify=false" >> $GITHUB_OUTPUT
-        elif [ "${{ env.LEAN_UPDATE_FILES_CHANGED }}" == "false" ]; then
+          echo "notify=false" >> "$GITHUB_OUTPUT"
+        elif [ "$LEAN_UPDATE_FILES_CHANGED" == "false" ]; then
           echo "No updates available, no need to notify"
-          echo "notify=false" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "success" ] && [ "${{ env.LEAN_UPDATE_DO_UPDATE }}" == "true" ]; then
+          echo "notify=false" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "success" ] && [ "$LEAN_UPDATE_DO_UPDATE" == "true" ]; then
           echo "Updates available and validation successful - should notify"
-          echo "notify=true" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "failure" ]; then
+          echo "notify=true" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "failure" ]; then
           echo "Updates available but validation failed - should notify"
-          echo "notify=true" >> $GITHUB_OUTPUT
-        elif [ "${{ steps.validate-update.outcome }}" == "skipped" ] && [ "${{ env.LEAN_UPDATE_DO_UPDATE }}" == "true" ]; then
+          echo "notify=true" >> "$GITHUB_OUTPUT"
+        elif [ "$VALIDATE_OUTCOME" == "skipped" ] && [ "$LEAN_UPDATE_DO_UPDATE" == "true" ]; then
           echo "Updates available with validation skipped - should notify"
-          echo "notify=true" >> $GITHUB_OUTPUT
+          echo "notify=true" >> "$GITHUB_OUTPUT"
         else
           echo "No need to notify in this case"
-          echo "notify=false" >> $GITHUB_OUTPUT
+          echo "notify=false" >> "$GITHUB_OUTPUT"
         fi
       shell: bash
 
@@ -456,7 +463,7 @@ runs:
           steps.outcomes.outputs.on-success == 'pr' &&
           steps.outcomes.outputs.on-failure == 'pr' &&
           env.LEAN_UPDATE_DO_UPDATE == 'true'))
-      uses: peter-evans/create-pull-request@v8
+      uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
       with:
         token: ${{ inputs.token }}
         title: "chore: Update Lean to ${{ env.LEAN_UPDATE_LATEST_LEAN }}"
@@ -486,7 +493,7 @@ runs:
 
     - name: Commit update if post-update validation was successful
       if: steps.validate-update.outcome == 'success' && steps.outcomes.outputs.on-success == 'commit' && env.LEAN_UPDATE_DO_UPDATE == 'true'
-      uses: EndBug/add-and-commit@v10
+      uses: EndBug/add-and-commit@cc9c08ba6c8df3b93a8f2db63e89b98368ae2ae8 # v11.1.1
       with:
         default_author: github_actions
       env:

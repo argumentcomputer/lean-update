@@ -26,7 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -44,7 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package with mathlib dependency
         id: update
@@ -66,7 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package with nightly
         id: update
@@ -82,9 +88,11 @@ jobs:
         run: exit 1
 
       - name: The latest Lean release should be nightly
+        env:
+          LATEST_LEAN: ${{ steps.update.outputs.latest_lean }}
         run: |
-          echo "Latest Lean version: ${{ steps.update.outputs.latest_lean }}"
-          if [[ ! "${{ steps.update.outputs.latest_lean }}" =~ ^nightly- ]]; then
+          echo "Latest Lean version: $LATEST_LEAN"
+          if [[ ! "$LATEST_LEAN" =~ ^nightly- ]]; then
             echo "Error: The latest_lean output should start with 'nightly-'"
             exit 1
           fi
@@ -100,7 +108,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -117,7 +127,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -138,7 +150,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -171,7 +185,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Bump the pinned tag and the toolchain
         id: update
@@ -231,7 +247,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Bump a package whose dependency is commit-pinned
         id: update
@@ -269,7 +287,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Bump the toolchain of a dependency-free package
         id: update
@@ -299,7 +319,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Bump two packages at once
         id: update
@@ -325,10 +347,12 @@ jobs:
           fi
 
       - name: The release must be reported as an output
+        env:
+          LATEST_LEAN: ${{ steps.update.outputs.latest_lean }}
         run: |
-          echo "latest_lean=${{ steps.update.outputs.latest_lean }}"
+          echo "latest_lean=$LATEST_LEAN"
           expected=$(cut -d: -f2 Fixtures/PinnedTags/lean-toolchain)
-          if [ "${{ steps.update.outputs.latest_lean }}" != "$expected" ]; then
+          if [ "$LATEST_LEAN" != "$expected" ]; then
             echo "Error: expected $expected"
             exit 1
           fi
@@ -343,7 +367,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Bump two packages, excluding one of them
         id: update

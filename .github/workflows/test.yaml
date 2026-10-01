@@ -26,7 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -44,7 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Update Lean package
         id: update
         uses: ./
@@ -60,7 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -71,18 +77,22 @@ jobs:
           lake_package_directory: "./Fixtures/SmokeSuccess"
 
       - name: output assertion of latest_lean
+        env:
+          LATEST_LEAN: ${{ steps.update.outputs.latest_lean }}
         run: |
-          echo "Latest Lean version: ${{ steps.update.outputs.latest_lean }}"
-          if [[ ! "${{ steps.update.outputs.latest_lean }}" =~ ^v ]]; then
+          echo "Latest Lean version: $LATEST_LEAN"
+          if [[ ! "$LATEST_LEAN" =~ ^v ]]; then
             echo "Error: The latest_lean output should start with 'v'"
             exit 1
           fi
           echo "latest_lean output test passed"
 
       - name: output assertion of notify
+        env:
+          NOTIFY: ${{ steps.update.outputs.notify }}
         run: |
-          echo "Notify status: ${{ steps.update.outputs.notify }}"
-          if [[ "${{ steps.update.outputs.notify }}" != "true" ]]; then
+          echo "Notify status: $NOTIFY"
+          if [[ "$NOTIFY" != "true" ]]; then
             echo "Error: The notify output should be 'true' for this test case"
             echo "This test should have updates available with a successful build"
             exit 1
@@ -93,7 +103,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Update Lean package
         id: update
@@ -104,9 +116,11 @@ jobs:
           lake_package_directory: "./Fixtures/HasDep"
 
       - name: output assertion of latest_lean
+        env:
+          LATEST_LEAN: ${{ steps.update.outputs.latest_lean }}
         run: |
-          echo "Latest Lean version: ${{ steps.update.outputs.latest_lean }}"
-          if [[ ! "${{ steps.update.outputs.latest_lean }}" =~ ^v ]]; then
+          echo "Latest Lean version: $LATEST_LEAN"
+          if [[ ! "$LATEST_LEAN" =~ ^v ]]; then
             echo "Error: The latest_lean output should start with 'v' even when dependencies are present"
             exit 1
           fi
@@ -116,7 +130,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Record original lean-toolchain
         id: original-toolchain
@@ -132,18 +148,21 @@ jobs:
           update_lean_toolchain: "never"
 
       - name: output assertion of latest_lean
+        env:
+          LATEST_LEAN: ${{ steps.update.outputs.latest_lean }}
         run: |
-          echo "Latest Lean version: ${{ steps.update.outputs.latest_lean }}"
-          if [[ ! "${{ steps.update.outputs.latest_lean }}" =~ ^v ]]; then
+          echo "Latest Lean version: $LATEST_LEAN"
+          if [[ ! "$LATEST_LEAN" =~ ^v ]]; then
             echo "Error: The latest_lean output should start with 'v' even when update_lean_toolchain is never"
             exit 1
           fi
           echo "latest_lean output test with update_lean_toolchain=never passed"
 
       - name: lean-toolchain should not be updated
+        env:
+          ORIGINAL_TOOLCHAIN: ${{ steps.original-toolchain.outputs.content }}
         run: |
           CURRENT_TOOLCHAIN=$(cat Fixtures/SmokeSuccess/lean-toolchain)
-          ORIGINAL_TOOLCHAIN="${{ steps.original-toolchain.outputs.content }}"
           echo "Original lean-toolchain: $ORIGINAL_TOOLCHAIN"
           echo "Current lean-toolchain: $CURRENT_TOOLCHAIN"
           if [[ "$CURRENT_TOOLCHAIN" != "$ORIGINAL_TOOLCHAIN" ]]; then
