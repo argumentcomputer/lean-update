@@ -1,0 +1,15 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # Branch-tracking ref allowed by .github/pinact.yaml
+        "argumentcomputer/ci-workflows/*": ref-pin
+        "*": hash-pin
+  # The test workflows exercise this repository's own action through
+  # `uses: ./`, the form upstream uses; keeping it avoids a diff on every
+  # upstream sync.
+  self-repository:
+    ignore:
+      - e2e_test.yml
+      - test.yaml
+      - update.yml
